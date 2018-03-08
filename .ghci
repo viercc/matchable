@@ -1,0 +1,4 @@
+:set prompt ">"
+:set -XQuasiQuotes
+:set -XTypeFamilies
+:set -XRankNTypes

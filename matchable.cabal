@@ -1,0 +1,34 @@
+name:                matchable
+version:             0.1.0
+synopsis:            Matchable Functors
+description:         
+license:             BSD3
+license-file:        LICENSE
+author:              Koji Miyazato
+maintainer:          viercc@gmail.com
+category:            Functors
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:       src
+  exposed-modules:      Data.Matchable,
+                        Data.Matchable.Equate,
+                        Data.Matchable.PatternMatch,
+                        Data.Matchable.Orphans
+  build-depends:        base                >=4.9      && <5,
+                        containers          >=0.5.7.1  && <0.6,
+                        bifunctors          >=5.4.1    && <6,
+                        free                >=4.12.4,
+                        recursion-schemes   >=5.0.2
+  ghc-options:          -Wall -O2
+  default-language:     Haskell2010
+
+test-suite my-functors-doctest
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             doctest.hs
+  build-depends:       base >4 && <5, Glob, doctest, doctest-discover
+  ghc-options:         -Wall -O2 -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
