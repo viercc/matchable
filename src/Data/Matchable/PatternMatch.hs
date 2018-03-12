@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Data.Matchable.PatternMatch(
-  match
+  Pattern, match
 ) where
 
 import qualified Data.Foldable       (fold)

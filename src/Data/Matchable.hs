@@ -48,7 +48,7 @@ class (Eq1 t, Functor t) => Matchable t where
 
   For example, the type signature of @zipMatch@ on the list Functor @[]@ reads as follows:
 
-  > zipMatch :: [a] -> [b] -> Just [(a,b)]
+  > zipMatch :: [a] -> [b] -> Maybe [(a,b)]
 
   @zipMatch as bs@ returns @Just (zip as bs)@ if the lengths of two given lists are
   same, and returns @Nothing@ otherwise.
@@ -69,18 +69,22 @@ class (Eq1 t, Functor t) => Matchable t where
 
   A definition of 'zipMatchWith' must satisfy:
 
-  * If there is a pair @(g, tab)@ such that fulfills all following three conditions,
+      * If there is a pair @(tab, tc)@ such that fulfills all following three conditions,
+        then @zipMatchWith f ta tb = Just tc@.
 
-    1. @ta = fmap fst tab@
-    2. @tb = fmap snd tab@
-    3. @fmap (uncurry f) tab = fmap (Just . g) tab@
+            1. @ta = fmap fst tab@
+            2. @tb = fmap snd tab@
+            3. @fmap (uncurry f) tab = fmap Just tc@
 
-    then @zipMatchWith f ta tb = Just (fmap g tab)@.
+      * If there are no such pair, @zipMatchWith f ta tb = Nothing@.
 
-  * If there are no such pair, @zipMatchWith f ta tb = Nothing@.
+  If @t@ is also 'Traversable', the last condition can be dropped and
+  the equation can be stated without using @tc@.
 
+  > zipMatchWith f ta tb = traverse (uncurry f) tab
+  
   @zipMatch@ can be defined in terms of @zipMatchWith@.
-  And if @t@ is also 'Traversable', @zipMatchWith@ can be defined in terms of @zipMatch@.
+  And if @t@ is also @Traversable@, @zipMatchWith@ can be defined in terms of @zipMatch@.
   When you implement both of them by hand, keep their relation in the way
   the default implementation is.
 
@@ -168,17 +172,18 @@ instance (Matchable f) => Matchable (Cofree f) where
 {-|
 
 An instance of Matchable can be implemened through GHC Generics.
-You only need to do two things: Make your type Traversable and Generic1.
+You only need to do two things: Make your type @Functor@ and @Generic1@.
 
 ==== Example
->>> :set -XDeriveFoldable -XDeriveFunctor -XDeriveTraversable
+>>> :set -XDeriveFunctor
 >>> :set -XDeriveGeneric
 >>> :{
   data MyTree label a = Leaf a | Node label [MyTree label a]
-    deriving (Show, Read, Eq, Ord, Functor, Foldable, Traversable, Generic1)
+    deriving (Show, Read, Eq, Ord, Functor, Generic1)
 :}
 
 Then you can use @genericZipMatchWith@ to implement @zipMatchWith@ method.
+You also need @Eq1@ instance, but 'liftEqDefault' is provided.
 
 >>> :{
   instance (Eq label) => Matchable (MyTree label) where
@@ -187,14 +192,11 @@ Then you can use @genericZipMatchWith@ to implement @zipMatchWith@ method.
     liftEq = liftEqDefault
   :}
 
->>> let example1 = zipMatch (Node "foo" [Leaf 1, Leaf 2]) (Node "foo" [Leaf 'a', Leaf 'b'])
->>> example1 :: Maybe (MyTree String (Int, Char))
+>>> zipMatch (Node "foo" [Leaf 1, Leaf 2]) (Node "foo" [Leaf 'a', Leaf 'b'])
 Just (Node "foo" [Leaf (1,'a'),Leaf (2,'b')])
->>> let example2 = zipMatch (Node "foo" [Leaf 1, Leaf 2]) (Node "bar" [Leaf 'a', Leaf 'b'])
->>> example2 :: Maybe (MyTree String (Int, Char))
+>>> zipMatch (Node "foo" [Leaf 1, Leaf 2]) (Node "bar" [Leaf 'a', Leaf 'b'])
 Nothing
->>> let example3 = zipMatch (Node "foo" [Leaf 1]) (Node "foo" [Node "bar" []])
->>> example3 :: Maybe (MyTree String (Int, Char))
+>>> zipMatch (Node "foo" [Leaf 1]) (Node "foo" [])
 Nothing
 
 -}
