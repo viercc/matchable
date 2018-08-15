@@ -109,7 +109,7 @@ zipzipMatch = zipMatchWith zipMatch
 --   so it is named @fmapRecovered@ but not @fmapDefault@.
 fmapRecovered :: (Matchable t) => (a -> b) -> t a -> t b
 fmapRecovered f ta =
-  fromMaybe (error "Law-abiding Matchable instance") $
+  fromMaybe (error "Law-violating Matchable instance") $
     zipMatchWith (\a _ -> Just (f a)) ta ta
 
 -- | @Matchable t@ implies @Eq a => Eq (t a)@.
