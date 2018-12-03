@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE DeriveFunctor    #-}
 module Data.Matchable(
   -- * Matchable class
   Matchable(..),
@@ -19,18 +20,34 @@ import           Control.Applicative
 import           Data.Functor.Classes
 
 import           Data.Maybe (fromMaybe, isJust)
+import           Data.Foldable
 
-import           Control.Comonad.Cofree
-import           Control.Monad.Free
-import           Data.Functor.Compose
 import           Data.Functor.Identity
+import           Data.Functor.Compose
+import           Data.Functor.Product
+import           Data.Functor.Sum
+
+import           Data.Tagged
+import           Data.Proxy
+
 import           Data.List.NonEmpty     (NonEmpty)
+
 import           Data.Map.Lazy          (Map)
 import qualified Data.Map.Lazy          as Map
+import           Data.IntMap.Lazy       (IntMap)
+import qualified Data.IntMap.Merge.Lazy as IntMap
+import           Data.Tree              (Tree)
+import           Data.Sequence          (Seq)
+import qualified Data.Sequence          as Seq
+
+import           Data.Vector            (Vector)
+import qualified Data.Vector            as Vector
+
+import           Data.Hashable          (Hashable)
+import           Data.HashMap.Lazy      (HashMap)
+import qualified Data.HashMap.Lazy      as HashMap
 
 import           GHC.Generics
-
-import           Data.Matchable.Orphans()
 
 -- | Containers that allows exact structural matching of two containers.
 class (Eq1 t, Functor t) => Matchable t where
@@ -127,7 +144,22 @@ liftEqDefault eq tx ty =
 instance Matchable Identity where
   zipMatchWith = genericZipMatchWith
 
-instance (Eq c) => Matchable (Const c) where
+instance (Eq k) => Matchable (Const k) where
+  zipMatchWith = genericZipMatchWith
+
+instance (Matchable f, Matchable g) => Matchable (Product f g) where
+  zipMatchWith = genericZipMatchWith
+
+instance (Matchable f, Matchable g) => Matchable (Sum f g) where
+  zipMatchWith = genericZipMatchWith
+
+instance (Matchable f, Matchable g) => Matchable (Compose f g) where
+  zipMatchWith = genericZipMatchWith
+
+instance Matchable Proxy where
+  zipMatchWith _ _ _ = Just Proxy
+
+instance Matchable (Tagged t) where
   zipMatchWith = genericZipMatchWith
 
 instance Matchable Maybe where
@@ -149,23 +181,41 @@ instance (Eq k) => Matchable (Map k) where
   zipMatchWith u ma mb =
     Map.fromAscList <$> zipMatchWith (zipMatchWith u) (Map.toAscList ma) (Map.toAscList mb)
 
-instance (Matchable f, Matchable g) => Matchable (Compose f g) where
+instance Matchable IntMap where
+  zipMatchWith u =
+    IntMap.mergeA (IntMap.traverseMissing (\_ _ -> Nothing))
+                  (IntMap.traverseMissing (\_ _ -> Nothing))
+                  (IntMap.zipWithAMatched (const u))
+
+instance Matchable Tree where
   zipMatchWith = genericZipMatchWith
 
-instance (Matchable f) => Matchable (Free f) where
-  zipMatchWith u =
-    let go (Free fma) (Free fmb) =
-          Free <$> zipMatchWith go fma fmb
-        go (Pure a) (Pure b) =
-          Pure <$> u a b
-        go _ _ = empty
-    in go
+instance Matchable Seq where
+  zipMatch as bs
+    | Seq.length as == Seq.length bs = Just (Seq.zip as bs)
+    | otherwise                      = Nothing
+  zipMatchWith u as bs
+    | Seq.length as == Seq.length bs = unsafeFillIn u as (Data.Foldable.toList bs)
+    | otherwise                      = Nothing
 
-instance (Matchable f) => Matchable (Cofree f) where
-  zipMatchWith u =
-    let go (a :< fwa) (b :< fwb) =
-          liftA2 (:<) (u a b) (zipMatchWith go fwa fwb)
-    in go
+instance Matchable Vector where
+  zipMatch as bs
+    | Vector.length as == Vector.length bs = Just (Vector.zip as bs)
+    | otherwise                            = Nothing
+
+  zipMatchWith u as bs
+    | Vector.length as == Vector.length bs = Vector.zipWithM u as bs
+    | otherwise                            = Nothing
+
+instance (Eq k, Hashable k) => Matchable (HashMap k) where
+  zipMatch as bs
+    | HashMap.size as == HashMap.size bs =
+        HashMap.traverseWithKey (\k a -> (,) a <$> HashMap.lookup k bs) as
+    | otherwise = Nothing
+  zipMatchWith u as bs
+    | HashMap.size as == HashMap.size bs =
+        HashMap.traverseWithKey (\k a -> u a =<< HashMap.lookup k bs) as
+    | otherwise = Nothing
 
 -- * Generic definition
 
@@ -253,3 +303,24 @@ instance (Matchable f, Matchable' g) => Matchable' (f :.: g) where
   {-# INLINABLE zipMatchWith' #-}
   zipMatchWith' u (Comp1 fga) (Comp1 fgb) =
     Comp1 <$> zipMatchWith (zipMatchWith' u) fga fgb
+
+-- Utility functions
+
+unsafeFillIn :: (Traversable f) => (a -> b -> Maybe c) -> f a -> [b] -> Maybe (f c)
+unsafeFillIn u as bs = fst <$> runFillIn (traverse (useOne u) as) bs
+
+-- Just a @StateT [b] Maybe@ but avoids to depend on transformers
+newtype FillIn b a = FillIn { runFillIn :: [b] -> Maybe (a, [b]) }
+  deriving (Functor)
+
+instance Applicative (FillIn b) where
+  pure a = FillIn $ \bs -> Just (a, bs)
+  FillIn fx <*> FillIn fy = FillIn $ \bs ->
+    fx bs >>= \(x, bs') ->
+    fy bs' >>= \(y, bs'') -> Just (x y, bs'')
+
+useOne :: (a -> b -> Maybe c) -> a -> FillIn b c
+useOne u a = FillIn $ \bs -> case bs of
+  [] -> Nothing
+  (b:bs') -> u a b >>= \c -> Just (c, bs')
+
