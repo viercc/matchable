@@ -15,6 +15,7 @@ author:              Koji Miyazato
 maintainer:          viercc@gmail.com
 category:            Functors
 build-type:          Simple
+extra-source-files:  README.md, CHANGELOG.md
 cabal-version:       >=1.10
 
 source-repository head
