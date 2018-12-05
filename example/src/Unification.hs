@@ -7,6 +7,12 @@ This module assumes terms to be unified are represented by
 @Free f a@, where @f@ is some @Matchable@ functor and @a@
 is a type for variable.
 
+The relation between matching and unification is previously posed in "unification-fd" package:
+
+<http://hackage.haskell.org/package/unification-fd-0.10.0.1/docs/Control-Unification.html>
+
+This can be thought of @Matchable@ version of unification-fd.
+
 -}
 module Unification(
   Subst(..), applySubst,
