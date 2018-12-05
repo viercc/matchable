@@ -2,8 +2,8 @@ flags: {}
 extra-package-dbs: []
 packages:
 - .
+- ./example
 extra-deps:
-- git: git@gitlab.com:viercc/my-prettyprint
-  commit: 2889ff94bbd25b5a845c66eadd59ad02d7ce81a3
-- free-5.0.1
-resolver: lts-10.8
+
+resolver: lts-12.17
+

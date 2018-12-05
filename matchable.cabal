@@ -2,11 +2,11 @@ name:                matchable
 version:             0.1.1
 synopsis:            A type class for Matchable Functors.
 description:         This package provides a type class @Matchable@, which represents
-                     @zipMatch@ operation which can zip two @Functor@ values.
+                     @zipMatch@ operation which can zip two values.
                      
                      @zipMatch@ operation can fail, and it returns zipped value wrapped
                      in @Maybe@. For example, if you try to zip two lists with different
-                     length like @[1,2]@ and @['a','b','c']@, @zipMatch@ returns @Nothing@.
+                     length, @zipMatch@ returns @Nothing@.
                      Specifically, @zipMatch@ returns zipped value if and only if two arguments
                      have exactly same \"shape\".
 license:             BSD3
