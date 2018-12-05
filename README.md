@@ -9,3 +9,4 @@ length, `zipMatch` returns `Nothing`.
 Specifically, `zipMatch` returns zipped value if and only if two arguments
 have exactly same shape.
 
+See [example](example/README.md) also.
