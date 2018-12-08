@@ -20,4 +20,6 @@ executable matchable-examples
                      , containers
                      , matchable
                      , free
+                     , mtl
+  ghc-options:         -Wall
 

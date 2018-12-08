@@ -69,9 +69,12 @@ occursIn a t = getAny $ foldMap (\b -> Any (a == b)) t
 newtype Subst f a = Subst { getSubst :: Map.Map a (Free f a) }
   deriving (Show)
 
+-- | Apply a substitution to a term.
 applySubst :: (Functor f, Ord a) => Subst f a -> Free f a -> Free f a
 applySubst (Subst m) t = t >>= \a -> fromMaybe (pure a) (Map.lookup a m)
 
+-- | @(a ==> t)@ is a substitution which replaces @a@ to @t@, and
+--   do not modify other variables.
 (==>) :: a -> Free f a -> Subst f a
 a ==> t = Subst $ Map.singleton a t
 

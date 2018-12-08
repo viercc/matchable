@@ -16,8 +16,10 @@ module MiniProlog(
   lit, nil, cons, var,
 
   Query,
-  (===), (.&.), append,
-  query
+  freshVar, (===),
+  query,
+  
+  append
 ) where
 
 import           Control.Monad
@@ -25,10 +27,7 @@ import           Data.Functor.Classes
 import           Data.Matchable
 import           GHC.Generics
 
-import qualified Data.Map             as Map
-import           Data.Set             (Set)
-import qualified Data.Set             as Set
-
+import           Control.Monad.State
 import           Control.Monad.Free
 
 import           Unification
@@ -58,7 +57,8 @@ instance (Eq a) => Eq1 (Sig a) where
 instance (Eq a) => Matchable (Sig a) where
   zipMatchWith = genericZipMatchWith
 
-type VarName = String
+data VarName = UserVar String | Temporary Int
+  deriving (Eq, Ord, Show)
 
 -- | A term is several nest of @Sig Int@ functor or a variable as base case.
 --   That is exactly @Free@.
@@ -75,75 +75,44 @@ nil = Free Nil
 cons :: Term -> Term -> Term
 cons x xs = Free $ Cons x xs
 
-var :: VarName -> Term
-var = pure
+infix 5 `cons`
 
--- | A solution is a substitution from variables to another terms.
+var :: String -> Term
+var = pure . UserVar
+
+-- | A solution is a substitution.
 type Solution = Subst (Sig Int) VarName
 
 -- | A query is a function which takes current solution and returns
 --   solutions satisfying added query.
-type Query = Solution -> [Solution]
+--   
+--   Thats:
+--   > Solution -> [Solution]
+--
+--   But some query needs to generate temporary fresh variable.
+--   To track how many fresh variables we used, it needs to be:
+--   
+--   > (Solution, Int) -> [(Solution, Int)]
+--
+--   And it is useful to be able to use it as a Monad. So we use
+--   the final form below.
+--
+--   > type Query a = (Solution, Int) -> [(a, (Solution, Int))]
+--   > type Query = StateT (Solution, Int) []
+type Query = StateT (Solution, Int) []
+
+-- | Generate a fresh variable.
+freshVar :: Query Term
+freshVar = StateT $ \(s,fresh) -> fresh `seq` [(pure (Temporary fresh), (s, fresh + 1))]
 
 -- | @t === u@ is a predicate: @t@ and @u@ unifies.
-(===) :: Term -> Term -> Query
-(t === u) s0 = case unify (applySubst s0 t) (applySubst s0 u) of
-  Left _  -> []
-  Right s -> [s <> s0]
+(===) :: Term -> Term -> Query ()
+t === u = StateT $ \(s0, fresh) ->
+  case unify (applySubst s0 t) (applySubst s0 u) of
+    Left _  -> []
+    Right s -> [((), (s <> s0, fresh))]
 
 infix 2 ===
-
--- | Combine two queries. Returned query is conjunction of two.
-(.&.) :: Query -> Query -> Query
-(.&.) = (>=>)
-
-infixr 1 .&.
-
--- | @append x y z@ is a predicate. It means if we append @x@ and @y@, the result is @z@. In pseudo-Prolog,
---
--- > append(nil, XS, XS).
--- > append([X|XS],[YS],[X|ZS]) :- append(XS, YS, ZS).
-append :: Term -> Term -> Term -> Query
-append t u v s0 =
-  (t' === nil .&. u' === var xs .&. v' === var xs) s0 ++
-  (t' === var x `cons` var xs .&.
-   u' === var ys .&.
-   v' === var x `cons` var zs .&.
-   append (var xs) (var ys) (var zs)) s0
-  where
-    f = applySubst s0
-    t' = f t
-    u' = f u
-    v' = f v
-
-    usedVars = Set.unions
-      [ varsOfTerm t'
-      , varsOfTerm u'
-      , varsOfTerm v'
-      , varsOfSolution s0 ]
-
-    (x : xs : ys : zs : _) = freshVars usedVars
-
-varsOfTerm :: Term -> Set VarName
-varsOfTerm = foldMap Set.singleton
-
-varsOfSolution :: Solution -> Set VarName
-varsOfSolution s =
-  Map.keysSet (getSubst s) `Set.union` foldMap (foldMap Set.singleton) (getSubst s)
-
-freshVars :: Set VarName -> [VarName]
-freshVars usedVars = freshVars0 `eliminate` usedVars
-  where
-    alphabet = "abcdefghijklmnopqrstuvwxyz"
-    freshVars0 = [ "?" ++ c : show n | n <- [1..] :: [Int], c <- alphabet ]
-
-eliminate :: (Ord a) => [a] -> Set a -> [a]
-eliminate [] _ = []
-eliminate as bs
-  | Set.null bs = as
-eliminate (a:as) bs
-  | Set.member a bs = eliminate as (Set.delete a bs)
-  | otherwise       = a : eliminate as bs
 
 {- |
 
@@ -160,10 +129,37 @@ Example 2: X ++ X == [1,1]
 X = Free (Cons (Free (Lit 1)) (Free Nil))
 
 -}
-query :: [VarName] -> Query -> IO ()
+query :: [String] -> Query () -> IO ()
 query vars solver =
-  case solver mempty of
-    []    -> putStrLn "No solution"
-    (s:_) -> forM_ vars $ \x ->
-      let t = applySubst s (var x)
-      in putStrLn $ x ++ " = " ++ show t
+  case execStateT solver (mempty, 0) of
+    [] -> putStrLn "No Solution"
+    ((s,_):_) -> forM_ vars $ \x ->
+      putStrLn $ x ++ " = " ++ show (applySubst s (var x))
+
+-- | @append x y z@ is a predicate. It means if we append @x@ and @y@,
+--   the result is @z@.
+--
+--   In pseudo-Prolog,
+--   > append(nil, XS, XS).
+--   > append([X|XS],[YS],[X|ZS]) :- append(XS, YS, ZS).
+--   
+--   The implemenation of @append@ below shows how above pseudo-Prolog
+--   translates this DSL pretty straitforwardly.
+append :: Term -> Term -> Term -> Query ()
+append t u v = appendNil `mplus` appendCons
+  where
+    appendNil =
+      do xs <- freshVar
+         t === nil
+         u === xs
+         v === xs
+
+    appendCons =
+      do x <- freshVar
+         xs <- freshVar
+         ys <- freshVar
+         zs <- freshVar
+         t === x `cons` xs
+         u === ys
+         v === x `cons` zs
+         append xs ys zs
