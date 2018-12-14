@@ -13,8 +13,9 @@ module MiniProlog(
 
   VarName, Term,
 
-  lit, nil, cons, var,
-
+  lit, nil, (.:), var,
+  prettyTerm,
+  
   Query,
   freshVar, (===),
   query,
@@ -32,24 +33,15 @@ import           Control.Monad.Free
 
 import           Unification
 
+import           AutoLiftShow
+
 -- | Signature of terms.
 data Sig a r = Lit a | Nil | Cons r r
     deriving (Show, Eq, Functor, Foldable, Traversable, Generic1)
 
-data Showable = forall a. Showable (Int -> a -> ShowS) a
-
-instance Show Showable where
-  showsPrec p (Showable showsp a) = showsp p a
-
-liftShowsPrecDefault ::
-  (Functor f)
-  => (forall x. Show x => Int -> f x -> ShowS)
-  -> (Int -> y -> ShowS) -> ([y] -> ShowS)
-  -> Int -> f y -> ShowS
-liftShowsPrecDefault showsPrec' showsp _ p fy = showsPrec' p (fmap (Showable showsp) fy)
-
 instance (Show a) => Show1 (Sig a) where
-  liftShowsPrec = liftShowsPrecDefault showsPrec
+  liftShowsPrec = autoLiftShowsPrec showsPrec
+  liftShowList = autoLiftShowList showList
 
 instance (Eq a) => Eq1 (Sig a) where
   liftEq = liftEqDefault
@@ -65,20 +57,37 @@ data VarName = UserVar String | Temporary Int
 type Term = Free (Sig Int) VarName
 
 -- * Constructor for @Term@ values.
-
 lit :: Int -> Term
 lit = Free . Lit
 
 nil :: Term
 nil = Free Nil
 
-cons :: Term -> Term -> Term
-cons x xs = Free $ Cons x xs
+(.:) :: Term -> Term -> Term
+x .: xs = Free $ Cons x xs
 
-infix 5 `cons`
+infixr 5 .:
 
 var :: String -> Term
 var = pure . UserVar
+
+-- | Pretty printing a term.
+prettyTerm :: Term -> String
+prettyTerm t = prettyTermP 0 t []
+  where
+    prettyTermP :: Int -> Term -> ShowS
+    prettyTermP p (Pure v) = prettyVarNameP p v
+    prettyTermP p (Free ft) = case ft of
+      Lit a -> showParen (p > 10) $ ("lit " ++) . showsPrec 11 a
+      Nil   -> ("nil" ++)
+      Cons u v -> showParen (p > 5) $
+        prettyTermP 6 u .
+        (" .: " ++) .
+        prettyTermP 5 v
+
+    prettyVarNameP :: Int -> VarName -> ShowS
+    prettyVarNameP p (UserVar v) = showParen (p > 10) $ ("var " ++) . showsPrec 11 v
+    prettyVarNameP _ (Temporary v) = ("?" ++) . shows v
 
 -- | A solution is a substitution.
 type Solution = Subst (Sig Int) VarName
@@ -120,13 +129,13 @@ infix 2 ===
 
 Example 1: X ++ [] == [1]
 
->>> query ["X"] $ append (var "X") nil (cons (lit 1) nil)
-X = Free (Cons (Free (Lit 1)) (Free Nil))
+>>> query ["X"] $ append (var "X") nil (lit 1 .: nil)
+X = lit 1 .: nil
 
 Example 2: X ++ X == [1,1]
 
->>> query ["X"] $ append (var "X") (var "X") (cons (lit 1) (cons (lit 1) nil))
-X = Free (Cons (Free (Lit 1)) (Free Nil))
+>>> query ["X"] $ append (var "X") (var "X") (lit 1 .: lit 1 .: nil)
+X = lit 1 .: nil
 
 -}
 query :: [String] -> Query () -> IO ()
@@ -134,7 +143,7 @@ query vars solver =
   case execStateT solver (mempty, 0) of
     [] -> putStrLn "No Solution"
     ((s,_):_) -> forM_ vars $ \x ->
-      putStrLn $ x ++ " = " ++ show (applySubst s (var x))
+      putStrLn $ x ++ " = " ++ prettyTerm (applySubst s (var x))
 
 -- | @append x y z@ is a predicate. It means if we append @x@ and @y@,
 --   the result is @z@.
@@ -159,7 +168,7 @@ append t u v = appendNil `mplus` appendCons
          xs <- freshVar
          ys <- freshVar
          zs <- freshVar
-         t === x `cons` xs
+         t === x .: xs
          u === ys
-         v === x `cons` zs
+         v === x .: zs
          append xs ys zs

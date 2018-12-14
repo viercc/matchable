@@ -20,8 +20,6 @@ module Unification(
   unify
 ) where
 
-import           Control.Monad
-import           Control.Applicative
 import           Data.Foldable       (toList)
 import           Data.Maybe          (fromMaybe)
 import           Data.Semigroup
@@ -85,7 +83,6 @@ instance (Functor f, Ord a) => Semigroup (Subst f a) where
 
 instance (Functor f, Ord a) => Monoid (Subst f a) where
   mempty = Subst Map.empty
-
 
 -- | Cause of failure in unification algorithm.
 data UnificationError f a =

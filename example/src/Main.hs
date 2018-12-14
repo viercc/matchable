@@ -6,12 +6,12 @@ main :: IO ()
 main = do
   putStrLn "Solving simple substitution"
   query ["X","Y","Z"] $
-    var "X" === cons (var "Y") (var "Z") >>
+    var "X" === var "Y" .: var "Z" >>
     var "Y" === lit 4 >>
     var "Z" === nil
   
   let makeList :: [Int] -> Term
-      makeList = foldr (cons . lit) nil
+      makeList = foldr ((.:) . lit) nil
   putStrLn "Solving X ++ X == [1,1]"
   query ["X"] $ append (var "X") (var "X") (makeList [1,1])
   
