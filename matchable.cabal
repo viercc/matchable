@@ -21,6 +21,7 @@ source-repository head
 library
   hs-source-dirs:       src
   exposed-modules:      Data.Matchable
+                      , Data.Bimatchable
   build-depends:        base                 >=4.10      && <5,
                         containers           >=0.5.10.2  && <0.7,
                         tagged               >=0.8       && <0.9,
