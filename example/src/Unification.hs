@@ -23,6 +23,7 @@ module Unification(
 import           Data.Foldable       (toList)
 import           Data.Maybe          (fromMaybe)
 import           Data.Semigroup
+import           Data.Monoid         (Monoid(..))
 
 import           Control.Monad.Free
 import           Data.Matchable
@@ -83,6 +84,7 @@ instance (Functor f, Ord a) => Semigroup (Subst f a) where
 
 instance (Functor f, Ord a) => Monoid (Subst f a) where
   mempty = Subst Map.empty
+  mappend = (<>)
 
 -- | Cause of failure in unification algorithm.
 data UnificationError f a =
