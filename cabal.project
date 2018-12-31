@@ -1,0 +1,3 @@
+packages: ./matchable.cabal
+optional-packages: ./**/*.cabal
+extra-packages: doctest

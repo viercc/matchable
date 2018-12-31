@@ -1,21 +1,2 @@
-# Projects that do not version control for reason
-/trashbox/
-/not-owned/
+cabal.project.local
 
-# cabal and stack
-.cabal-sandbox/
-cabal.sandbox.config
-.stack-work/
-
-# raw build files
-*.hi
-*.o
-
-# fail safe to mis-configured rsync
-/backup/
-
-# editor backup
-*~
-
-# hasktags file
-TAGS

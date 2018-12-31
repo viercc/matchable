@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP              #-}
 {-# LANGUAGE EmptyCase        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies     #-}
@@ -18,6 +19,7 @@ module Data.Matchable(
 import           Control.Applicative
 
 import           Data.Functor.Classes
+import           Data.Orphans()
 
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Foldable
@@ -34,11 +36,20 @@ import           Data.List.NonEmpty     (NonEmpty)
 
 import           Data.Map.Lazy          (Map)
 import qualified Data.Map.Lazy          as Map
+import           Data.Map.Orphans       ()
 import           Data.IntMap.Lazy       (IntMap)
+#if MIN_VERSION_containers(0,5,10)
 import qualified Data.IntMap.Merge.Lazy as IntMap
+#else
+import qualified Data.IntMap.Lazy       as IntMap
+#endif
+import           Data.IntMap.Orphans    ()
+
 import           Data.Tree              (Tree)
+import           Data.Tree.Orphans      ()
 import           Data.Sequence          (Seq)
 import qualified Data.Sequence          as Seq
+import           Data.Sequence.Orphans  ()
 
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as Vector
@@ -177,19 +188,6 @@ instance (Eq e) => Matchable ((,) e) where
 instance (Eq e) => Matchable (Either e) where
   zipMatchWith = genericZipMatchWith
 
-instance (Eq k) => Matchable (Map k) where
-  zipMatchWith u ma mb =
-    Map.fromAscList <$> zipMatchWith (zipMatchWith u) (Map.toAscList ma) (Map.toAscList mb)
-
-instance Matchable IntMap where
-  zipMatchWith u =
-    IntMap.mergeA (IntMap.traverseMissing (\_ _ -> Nothing))
-                  (IntMap.traverseMissing (\_ _ -> Nothing))
-                  (IntMap.zipWithAMatched (const u))
-
-instance Matchable Tree where
-  zipMatchWith = genericZipMatchWith
-
 instance Matchable Seq where
   zipMatch as bs
     | Seq.length as == Seq.length bs = Just (Seq.zip as bs)
@@ -197,6 +195,25 @@ instance Matchable Seq where
   zipMatchWith u as bs
     | Seq.length as == Seq.length bs = unsafeFillIn u as (Data.Foldable.toList bs)
     | otherwise                      = Nothing
+
+instance (Eq k) => Matchable (Map k) where
+  zipMatchWith u ma mb =
+    Map.fromAscList <$> zipMatchWith (zipMatchWith u) (Map.toAscList ma) (Map.toAscList mb)
+
+instance Matchable IntMap where
+#if MIN_VERSION_containers(0,5,10)
+  zipMatchWith u =
+    IntMap.mergeA (IntMap.traverseMissing (\_ _ -> Nothing))
+                  (IntMap.traverseMissing (\_ _ -> Nothing))
+                  (IntMap.zipWithAMatched (const u))
+#else
+  zipMatchWith u ma mb =
+    IntMap.fromAscList <$>
+      zipMatchWith (zipMatchWith u) (IntMap.toAscList ma) (IntMap.toAscList mb)
+#endif
+
+instance Matchable Tree where
+  zipMatchWith = genericZipMatchWith
 
 instance Matchable Vector where
   zipMatch as bs
