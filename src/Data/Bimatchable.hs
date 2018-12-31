@@ -1,5 +1,4 @@
 module Data.Bimatchable(
-  -- * Bimatchable class
   Bimatchable(..),
   bimapRecovered,
   eq2Default,
@@ -13,8 +12,30 @@ import           Data.Functor.Classes
 
 import           Data.Tagged
 
+-- | Containers that allows exact structural matching of two containers.
+--   
+--   @Bimatchable@ is 'Bifunctor'-version of 'Matchable'.
+--   It can compare and zip containers with two parameters.
 class (Eq2 t, Bifunctor t) => Bimatchable t where
   {- |
+  
+  'bizipMatch' is to 'Data.Matchable.zipMatch' what 'bimap' is to 'fmap'.
+  
+  Decides if two structures match exactly. If they match, return zipped version of them.
+
+  ==== Law
+
+  Forall @x :: t a b@, @y :: t a' b'@, @z :: t (a,a') (b,b')@,
+  
+  > bizipMatch x y = Just z
+  
+  holds if and only if both of
+  
+  > x = bimap fst fst z
+  > y = bimap snd snd z
+  
+  holds. Otherwise, @bizipMatch x y = Nothing@.
+  
   ==== Example
   >>> bizipMatch (Left 1) (Left 'a')
   Just (Left (1,'a'))
@@ -26,6 +47,37 @@ class (Eq2 t, Bifunctor t) => Bimatchable t where
   bizipMatch :: t a b -> t a' b' -> Maybe (t (a,a') (b,b'))
   bizipMatch = bizipMatchWith (curry Just) (curry Just)
 
+
+  {-|
+  
+  'bizipMatchWith' is to 'Data.Matchable.zipMatchWith' what 'bimap' is to 'fmap'.
+  
+  Match two structures. If they match, zip them with given functions
+  @(a -> a' -> Maybe a'')@ and @(b -> b -> Maybe b'')@.
+  Passed functions can make whole match failby returning @Nothing@.
+
+  ==== Law
+
+  For any
+
+  > x :: t a b
+  > y :: t a' b'
+  > f :: a -> a' -> Maybe a''
+  > g :: b -> b' -> Maybe b''
+  
+  'bizipMatchWith' must satisfy the following.
+
+      - If there is a pair @(z :: t (a,a') (b,b'), w :: t a'' b'')@ such that
+        fulfills all of the following three conditions, then
+        @bizipMatchWith f g x y = Just w@.
+
+            1. @x = bimap fst fst z@
+            2. @y = bimap snd snd z@
+            3. @bimap (uncurry f) (uncurry g) z = bimap Just Just w@
+
+      - If there are no such pair, @bizipMatchWith f g x y = Nothing@.
+  
+  -}
   bizipMatchWith :: (a -> a' -> Maybe a'')
                  -> (b -> b' -> Maybe b'')
                  -> t a b -> t a' b' -> Maybe (t a'' b'')
