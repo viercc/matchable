@@ -3,10 +3,12 @@
 
 module Data.Matchable.TH (deriveMatchable, deriveBimatchable) where
 
-import           Data.Functor                 ((<&>))
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Datatype
   (DatatypeInfo(..), ConstructorInfo(..), reifyDatatype)
+
+(<&>) :: (Functor f) => f a -> (a -> b) -> f b
+(<&>) = flip fmap
 
 -- | Build an instance of 'Matchable' for a data type.
 --
@@ -66,7 +68,7 @@ deriveMatchable name = do
       in case cons of
            []  -> []
            [_] -> matchClauses
-           _   -> matchClauses <> [mismatchClause]
+           _   -> matchClauses ++ [mismatchClause]
     ]
   pure [dec]
 
@@ -128,7 +130,7 @@ deriveBimatchable name = do
       in case cons of
            []  -> []
            [_] -> matchClauses
-           _   -> matchClauses <> [mismatchClause]
+           _   -> matchClauses ++ [mismatchClause]
     ]
   pure [dec]
 
