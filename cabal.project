@@ -1,3 +1,9 @@
 packages: ./matchable.cabal
 optional-packages: ./**/*.cabal
 extra-packages: doctest
+
+source-repository-package
+    type: git
+    location: https://github.com/viercc/base-containers-orphans.git
+    tag: e0b1ba2b63063789200e18a314616f5119b11e56
+
