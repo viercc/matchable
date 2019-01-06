@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Main(main) where
 
 import           Data.Functor.Classes
@@ -12,20 +13,39 @@ main :: IO ()
 main = putStrLn "compiles"
 
 data F a = F0 | F1 a | F2 a a
-  deriving (Show, Eq, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor)
 
 instance Eq1 F where
   liftEq = liftEqDefault
 
 $(deriveMatchable ''F)
 
-newtype G a = G [(Int, a)]
-  deriving (Show, Eq, Functor, Foldable, Traversable)
+newtype G a = G [(a, Int, a)]
+  deriving (Show, Eq, Functor)
 
 instance Eq1 G where
   liftEq = liftEqDefault
 
 $(deriveMatchable ''G)
+
+data H a b = H0 a | H1 a b | H2 [Either a b]
+  deriving (Show, Eq, Functor)
+
+instance (Eq a) => Eq1 (H a) where
+  liftEq = liftEqDefault
+
+$(deriveMatchable ''H)
+
+{-
+
+@$(deriveMatchable ''H)@ expands like below:
+
+instance (Eq a, Matchable (Either a)) => Matchable (H a) where ...
+
+This requires UndecidableInstances extension, and warned by GHC
+as it exibits worse type inference.
+
+-}
 
 -------------------------------
 
@@ -39,6 +59,7 @@ instance Bifunctor BiF where
 
 $(deriveBimatchable ''BiF)
 
+{-
 data BiG a b = BiG0 | BiG1 [a] [b]
 
 instance Eq2 BiG where
@@ -48,3 +69,4 @@ instance Bifunctor BiG where
   bimap = bimapRecovered
 
 $(deriveBimatchable ''BiG)
+-}
