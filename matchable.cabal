@@ -43,3 +43,10 @@ test-suite examples
   build-depends:       base, containers, matchable, hspec
   default-language:    Haskell2010
 
+test-suite th-examples
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             th.hs
+  build-depends:       base, containers, matchable
+  default-language:    Haskell2010
+

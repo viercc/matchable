@@ -3,7 +3,10 @@ extra-package-dbs: []
 packages:
 - .
 - ./example
+
 extra-deps:
+- git: https://github.com/viercc/base-containers-orphans.git
+  commit: e0b1ba2b63063789200e18a314616f5119b11e56
 
 resolver: lts-12.17
 
