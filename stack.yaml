@@ -3,6 +3,7 @@ extra-package-dbs: []
 packages:
 - .
 - ./example
+- ./matchable-th
 
 extra-deps:
 - git: https://github.com/viercc/base-containers-orphans.git

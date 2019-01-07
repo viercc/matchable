@@ -21,7 +21,6 @@ source-repository head
 library
   hs-source-dirs:       src
   exposed-modules:      Data.Matchable
-                      , Data.Matchable.TH
                       , Data.Bimatchable
   build-depends:        base                 >=4.9       && <5,
                         base-orphans         >=0.6,
@@ -30,9 +29,7 @@ library
                         tagged               >=0.8       && <0.9,
                         hashable             >=1.0.1.1   && <1.3,
                         unordered-containers >=0.2.6     && <0.3,
-                        vector               >=0.10.9.0  && <0.13,
-                        template-haskell >= 2.4 && < 2.15,
-                        th-abstraction
+                        vector               >=0.10.9.0  && <0.13
   ghc-options:          -Wall
   default-language:     Haskell2010
 
@@ -42,11 +39,3 @@ test-suite examples
   main-is:             example.hs
   build-depends:       base, containers, matchable, hspec
   default-language:    Haskell2010
-
-test-suite th-examples
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             th.hs
-  build-depends:       base, containers, matchable
-  default-language:    Haskell2010
-
