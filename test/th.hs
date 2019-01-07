@@ -40,12 +40,26 @@ $(deriveMatchable ''H)
 
 @$(deriveMatchable ''H)@ expands like below:
 
-instance (Eq a, Matchable (Either a)) => Matchable (H a) where ...
+  instance (Eq a, Matchable (Either a)) => Matchable (H a) where ...
 
 This requires UndecidableInstances extension, and warned by GHC
 as it exibits worse type inference.
 
+Mitigating this problem might need manually implement constraint
+solver in TH side, so it's not an easy target.
+
 -}
+
+data I a b = I a b (Either [b] (a,b))
+  deriving (Show, Eq)
+
+instance (Eq a) => Eq1 (I a) where
+  liftEq = liftEqDefault
+
+instance (Eq a) => Functor (I a) where
+  fmap = fmapRecovered
+
+$(deriveMatchable ''I)
 
 -------------------------------
 
@@ -59,8 +73,7 @@ instance Bifunctor BiF where
 
 $(deriveBimatchable ''BiF)
 
-{-
-data BiG a b = BiG0 | BiG1 [a] [b]
+data BiG a b = BiG0 | BiG1 [a] [b] | BiG2 (Int, BiF a b)
 
 instance Eq2 BiG where
   liftEq2 = liftEq2Default
@@ -69,4 +82,3 @@ instance Bifunctor BiG where
   bimap = bimapRecovered
 
 $(deriveBimatchable ''BiG)
--}
