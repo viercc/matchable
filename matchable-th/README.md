@@ -4,7 +4,7 @@ This package provides TemplateHaskell functions to
 generate instances of `Matchable` and `Bimatchable` type classes,
 which are from `matchable` package.
 
-### Exmample
+### Example
 
 ``` haskell
 {-# LANGUAGE DeriveFunctor #-}
