@@ -45,15 +45,16 @@ deriveMatchable name = do
 makeZipMatchWith :: Name -> ExpQ
 makeZipMatchWith name = makeZipMatchWith' name >>= snd
 
+boundName :: TyVarBndr -> Name
+boundName (KindedTV a _) = a
+boundName (PlainTV a)    = a
+
 makeZipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
 makeZipMatchWith' name = do
   info <- reifyDatatype name
   let DatatypeInfo { datatypeVars = dtVars , datatypeCons = cons } = info
-      tyA : rest' = reverse (removeSig <$> dtVars)
+      tyA : rest' = reverse (VarT . boundName <$> dtVars)
       dtFunctor = foldr (flip AppT) (ConT name) rest'
-
-      removeSig (SigT a _) = a
-      removeSig a          = a
 
   f <- newName "f"
 
@@ -224,11 +225,8 @@ makeBizipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
 makeBizipMatchWith' name = do
   info <- reifyDatatype name
   let DatatypeInfo { datatypeVars = dtVars , datatypeCons = cons } = info
-      tyB : tyA : rest' = reverse (removeSig <$> dtVars)
+      tyB : tyA : rest' = reverse (VarT . boundName <$> dtVars)
       dtFunctor = foldr (flip AppT) (ConT name) rest'
-
-      removeSig (SigT a _) = a
-      removeSig a          = a
 
   f <- newName "f"
   g <- newName "g"
