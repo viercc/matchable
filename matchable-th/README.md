@@ -34,6 +34,18 @@ import Data.Functor.Classes (Eq2(..))
 import Data.Bimatchable
 import Data.Matchable.TH
 
+-- Most simple case
+data BiF a b = BiF0 | BiF1 a b
+
+instance Eq2 BiF where
+  liftEq2 = liftEq2Default
+
+instance Bifunctor BiF where
+  bimap = bimapRecovered
+
+$(deriveBimatchable ''BiF)
+
+-- Test case for using [], tuple, and another Bimatchable instance
 data BiG a b = BiG0 | BiG1 [a] [b] | BiG2 (Int, BiF a b)
 
 instance Eq2 BiG where
