@@ -11,7 +11,7 @@ maintainer:          viercc@gmail.com
 category:            Functors
 build-type:          Simple
 extra-source-files:  README.md, CHANGELOG.md
-cabal-version:       >=2.0
+cabal-version:       2.0
 
 source-repository head
   type:     git
