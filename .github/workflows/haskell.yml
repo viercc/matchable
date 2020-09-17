@@ -23,7 +23,9 @@ jobs:
         env:
           cache-name: cache-env2
         with:
-          path: /opt/ghc /opt/cabal
+          path: |
+            /opt/ghc
+            /opt/cabal
           key: ${{ runner.os }}-${{ matrix.ghc }}-${{ env.cache-name }}
       
       - name: Setup Haskell
@@ -39,8 +41,8 @@ jobs:
           cache-name: cache-cabal2
         with:
           path: |
-            ${{ steps.setup-haskell.outputs.cabal-store }}
             dist-newstyle
+            ${{ steps.setup-haskell.outputs.cabal-store }}
           key: ${{ runner.os }}-${{ matrix.ghc }}-${{ env.cache-name }}-${{ hashFiles('**/*.cabal', 'cabal.project') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.ghc }}-${{ env.cache-name }}-${{ hashFiles('**/*.cabal', 'cabal.project') }}
