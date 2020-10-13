@@ -1,4 +1,5 @@
 packages: ./matchable.cabal
 optional-packages: ./**/*.cabal
-extra-packages: doctest
 
+package QuickCheck
+    flags: -templateHaskell

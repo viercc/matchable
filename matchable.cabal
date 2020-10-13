@@ -31,7 +31,7 @@ library
   ghc-options:          -Wall
   default-language:     Haskell2010
 
-test-suite examples
+test-suite matchable-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             example.hs

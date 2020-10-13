@@ -12,9 +12,10 @@ import           Data.Matchable               (Matchable (..))
 import           Data.Monoid                  (Monoid (..))
 import           Data.Semigroup               (Semigroup (..))
 
-import           Language.Haskell.TH
+import           Language.Haskell.TH hiding (TyVarBndr(..))
 import           Language.Haskell.TH.Datatype (ConstructorInfo (..),
                                                DatatypeInfo (..), reifyDatatype)
+import           Language.Haskell.TH.Datatype.TyVarBndr
 
 -- | Build an instance of 'Matchable' for a data type.
 --
@@ -45,15 +46,11 @@ deriveMatchable name = do
 makeZipMatchWith :: Name -> ExpQ
 makeZipMatchWith name = makeZipMatchWith' name >>= snd
 
-boundName :: TyVarBndr -> Name
-boundName (KindedTV a _) = a
-boundName (PlainTV a)    = a
-
 makeZipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
 makeZipMatchWith' name = do
   info <- reifyDatatype name
   let DatatypeInfo { datatypeVars = dtVars , datatypeCons = cons } = info
-      tyA : rest' = reverse (VarT . boundName <$> dtVars)
+      tyA : rest' = reverse (VarT . tvName <$> dtVars)
       dtFunctor = foldr (flip AppT) (ConT name) rest'
 
   f <- newName "f"
@@ -225,7 +222,7 @@ makeBizipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
 makeBizipMatchWith' name = do
   info <- reifyDatatype name
   let DatatypeInfo { datatypeVars = dtVars , datatypeCons = cons } = info
-      tyB : tyA : rest' = reverse (VarT . boundName <$> dtVars)
+      tyB : tyA : rest' = reverse (VarT . tvName <$> dtVars)
       dtFunctor = foldr (flip AppT) (ConT name) rest'
 
   f <- newName "f"
