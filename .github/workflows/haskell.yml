@@ -9,41 +9,29 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         ghc: ['8.2.2', '8.4.4', '8.6.5', '8.8.4', '8.10.6', '9.0.1']
-        cabal: ['3.4.0.0']
-    name: Haskell GHC ${{ matrix.ghc }} sample
+    name: Build on GHC ${{ matrix.ghc }}
     runs-on: ubuntu-latest
     
     steps:
       - uses: actions/checkout@v2
       
-      - name: Cache(compilers)
-        uses: actions/cache@v1
-        env:
-          cache-name: cache-env2
+      - name: Cache
+        uses: actions/cache@v2
         with:
           path: |
             ~/.ghcup
             ~/.cabal
-          key: ${{ runner.os }}-$${{ matrix.ghc }}-${{ env.cache-name }}
+            dist-newstyle
+          key: ${{ runner.os }}-${{ matrix.ghc }}-env
       
       - name: Setup Haskell
         run: |
           ghcup install ghc ${{ matrix.ghc }}
-          ghcup install cabal ${{ matrix.cabal }}
-      
-      - name: Cache(Project)
-        uses: actions/cache@v1
-        env:
-          cache-name: cache-cabal2
-        with:
-          path: |
-            dist-newstyle
-          key: ${{ runner.os }}-$${{ matrix.ghc }}-${{ env.cache-name }}-${{ hashFiles('**/*.cabal', 'cabal.project') }}
-          restore-keys: |
-            ${{ runner.os }}-$${{ matrix.ghc }}-${{ env.cache-name }}-${{ hashFiles('**/*.cabal', 'cabal.project') }}
-            ${{ runner.os }}-$${{ matrix.ghc }}-${{ env.cache-name }}-
+          ghcup set ghc ${{ matrix.ghc }}
+          ghcup install cabal
       
       - name: Install dependencies
         run: |
@@ -51,5 +39,41 @@ jobs:
           cabal build --only-dependencies --enable-tests --enable-benchmarks
       - name: Build
         run: cabal v2-build --write-ghc-environment-files=always --enable-tests --enable-benchmarks all
+  
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ['8.2.2', '8.4.4', '8.6.5', '8.8.4', '8.10.6', '9.0.1' ]
+    needs: build
+    name: Test on GHC ${{ matrix.ghc }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache
+        id: restore-cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.ghcup
+            ~/.cabal
+            dist-newstyle
+          key: ${{ runner.os }}-${{ matrix.ghc }}-env
+      
+      - name: 'Guard(cache was restored)'
+        if: ${{ !(steps.restore-cache.outputs.cache-hit) }}
+        run: exit 1
+      
+      - name: Setup Haskell
+        run: |
+          ghcup install ghc ${{ matrix.ghc }}
+          ghcup set ghc ${{ matrix.ghc }}
+          ghcup install cabal
+      
       - name: Run tests
-        run: cabal v2-test --write-ghc-environment-files=always all
+        run: cabal v2-test --write-ghc-environment-files=always matchable:matchable-test matchable-th:matchable-th-test
+      - name: Run doctest
+        if: ${{ startsWith(matrix.ghc, '8.') }}
+        run: cabal v2-test --write-ghc-environment-files=always matchable:doctest
