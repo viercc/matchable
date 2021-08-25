@@ -1,9 +1,9 @@
 name:                matchable
 version:             0.1.2.1
 synopsis:            A type class for Matchable Functors.
-description:         This package provides a type class @Matchable@, which represents
-                     @zipMatch@ operation which can zip two values if these two have
-                     exactly same shape.
+description:         This package defines a type class @Matchable@, providing
+                     @zipMatch@ operation for zipping two values of any container-like
+                     functor type.
 license:             BSD3
 license-file:        LICENSE
 author:              Koji Miyazato
