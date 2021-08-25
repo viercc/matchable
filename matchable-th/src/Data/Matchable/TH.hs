@@ -46,13 +46,19 @@ deriveMatchable name = do
 makeZipMatchWith :: Name -> ExpQ
 makeZipMatchWith name = makeZipMatchWith' name >>= snd
 
+viewLast :: [a] -> Maybe ([a], a)
+viewLast as = case reverse as of
+  [] -> Nothing
+  a:rest -> Just (reverse rest, a)
+
 makeZipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
 makeZipMatchWith' name = do
   info <- reifyDatatype name
-  let DatatypeInfo { datatypeVars = dtVars , datatypeCons = cons } = info
-      tyA : rest' = reverse (VarT . tvName <$> dtVars)
-      dtFunctor = foldr (flip AppT) (ConT name) rest'
-
+  let DatatypeInfo { datatypeVars = dtVarsNames , datatypeCons = cons } = info
+  (dtFunctor, tyA) <- case viewLast (VarT . tvName <$> dtVarsNames) of
+    Nothing -> fail $ "Not a type constructor:" ++ show name
+    Just (rest, tyA) -> return (foldl AppT (ConT name) rest, tyA)
+  
   f <- newName "f"
 
   let mkMatchClause (ConstructorInfo ctrName _ _ fields _ _) =
@@ -218,12 +224,18 @@ deriveBimatchable name = do
 makeBizipMatchWith :: Name -> ExpQ
 makeBizipMatchWith name = makeBizipMatchWith' name >>= snd
 
+viewLastTwo :: [a] -> Maybe ([a],a,a)
+viewLastTwo as = case reverse as of
+  b:a:rest -> Just (reverse rest, a, b)
+  _ -> Nothing
+
 makeBizipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
 makeBizipMatchWith' name = do
   info <- reifyDatatype name
   let DatatypeInfo { datatypeVars = dtVars , datatypeCons = cons } = info
-      tyB : tyA : rest' = reverse (VarT . tvName <$> dtVars)
-      dtFunctor = foldr (flip AppT) (ConT name) rest'
+  (dtFunctor, tyA, tyB) <- case viewLastTwo (VarT . tvName <$> dtVars) of
+      Nothing -> fail $ "Not a datatype with at least 2 parameters: " ++ show name
+      Just (rest, tyA, tyB) -> return (foldl AppT (ConT name) rest, tyA, tyB)
 
   f <- newName "f"
   g <- newName "g"

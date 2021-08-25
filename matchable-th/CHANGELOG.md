@@ -1,3 +1,9 @@
+# 0.1.2.0
+
+- Fail correctly, with appropriate error message, when deriving Matchable
+  and Bimatchable fails due to the datatype having zero (Matchable) or
+  less than two (Bimatchable) parameters.
+
 # 0.1.1.1
 
 - Use "th-abstraction" >= 0.4 to cover changes in forthcoming

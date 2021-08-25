@@ -1,0 +1,15 @@
+packages: ./matchable.cabal
+optional-packages: ./**/*.cabal
+
+package QuickCheck
+    flags: -templateHaskell
+
+-- Some packages have got fixes waiting-to-be-released for GHC 9.2
+source-repository-package
+  type: git
+  location: https://github.com/ekmett/semigroupoids.git
+  tag: f8dd1b980790d0705bdae52ea39b57f62b5ad8cd
+source-repository-package
+  type: git
+  location: https://github.com/haskell/random.git
+  tag: 6d8b9b5f09bfd726662035c2a9687c1c23a3ebbc
