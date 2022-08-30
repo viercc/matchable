@@ -4,8 +4,8 @@ set -ue
 
 cabal="cabal --config-file=$HOME/.cabal/config_nohaddock"
 ghcprefix='ghc'
-compiler_versions="8.2 8.4 8.6 8.8 8.10 9.0"
-next_compiler_version="9.2.0.20210821"
+compiler_versions="8.8 8.10 9.0 9.2 9.4"
+next_compiler_version=""
 
 for v in $compiler_versions $next_compiler_version; do
     ghc=${ghcprefix}-${v}
@@ -13,9 +13,9 @@ for v in $compiler_versions $next_compiler_version; do
     echo Testing for ghc-$ghcver
     
     build_opt="-v0 -j4"
-    if [ "v$v" == v$next_compiler_version ]; then
-        build_opt="$build_opt --project-file=cabal.project.ghc-9.2.0-rc1 --allow-newer"
-    fi
+    # if [ "v$v" == v$next_compiler_version ]; then
+    #     build_opt="$build_opt --project-file=cabal.project.ghc-9.2.0-rc1 --allow-newer"
+    # fi
     test_opt="--test-show-details=failures"
     
     $cabal v2-build -w $ghc \

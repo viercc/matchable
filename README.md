@@ -1,7 +1,11 @@
+[![Haskell CI](https://github.com/viercc/matchable/actions/workflows/haskell.yml/badge.svg)](https://github.com/viercc/matchable/actions/workflows/haskell.yml)
+
+
 ## matchable
 
-This package provides a type class `Matchable`, which represents
-`zipMatch` operation which can zip two values.
+This package defines a type class `Matchable`,
+which provides `zipMatch` operation for zipping two values of a
+container type.
 
 `zipMatch` operation can fail, and it returns zipped value wrapped
 in `Maybe`. Specifically, `zipMatch` returns zipped value if and only if two arguments
@@ -16,4 +20,4 @@ Just [(1,'a'), (2,'b')]
 Nothing
 ```
 
-See [example](https://github.com/viercc/matchable/blob/master/example/README.md) also.
+See [examples](https://github.com/viercc/matchable/blob/master/example/README.md) also.
