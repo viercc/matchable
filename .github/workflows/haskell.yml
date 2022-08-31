@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['8.2.2', '8.4.4', '8.6.5', '8.8.4', '8.10.6', '9.0.1']
+        ghc: ['8.8.4', '8.10.6', '9.0.1', '9.2.4', '9.4.2']
     name: Build on GHC ${{ matrix.ghc }}
     runs-on: ubuntu-latest
     
@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['8.2.2', '8.4.4', '8.6.5', '8.8.4', '8.10.6', '9.0.1' ]
+        ghc: ['8.8.4', '8.10.6', '9.0.1', '9.2.4', '9.4.2']
     needs: build
     name: Test on GHC ${{ matrix.ghc }}
     runs-on: ubuntu-latest
@@ -75,5 +75,5 @@ jobs:
       - name: Run tests
         run: cabal v2-test --write-ghc-environment-files=always matchable:matchable-test matchable-th:matchable-th-test
       - name: Run doctest
-        if: ${{ startsWith(matrix.ghc, '8.') }}
+        if: ${{ !startsWith(matrix.ghc, '9.4.') }}
         run: cabal v2-test --write-ghc-environment-files=always matchable:doctest
