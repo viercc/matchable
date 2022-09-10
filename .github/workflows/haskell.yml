@@ -72,10 +72,11 @@ jobs:
           ghcup set ghc ${{ matrix.ghc }}
           ghcup install cabal
       
-      - name: Install doctest
-        run: cabal install --overwrite-policy=always doctest
-      
       - name: Run tests
         run: cabal v2-test --write-ghc-environment-files=always matchable:matchable-test matchable-th:matchable-th-test
+      
       - name: Run doctest
-        run: cabal v2-repl --with-ghc=doctest
+        run: |
+          cabal install --overwrite-policy=always --install-method=copy --installdir=./test-bin doctest
+          chmod u+x ./test-bin/doctest
+          cabal repl --with-ghc=./test-bin/doctest
