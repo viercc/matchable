@@ -50,6 +50,11 @@ import qualified Data.HashMap.Lazy      as HashMap
 
 import           GHC.Generics
 
+-- $setup
+-- This is required to silence "type defaults" warning, which clutters GHCi
+-- output and makes doctests fail.
+-- >>> :set -Wno-type-defaults
+
 -- | Containers that allows exact structural matching of two containers.
 class (Eq1 t, Functor t) => Matchable t where
   {- |

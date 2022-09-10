@@ -1,3 +1,4 @@
 cabal.project.local
 .ghc.environment.*
 dist-newstyle
+doctest-bin
