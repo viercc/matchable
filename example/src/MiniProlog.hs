@@ -23,8 +23,6 @@ module MiniProlog(
   append
 ) where
 
-import           Data.Semigroup(Semigroup(..))
-
 import           Control.Monad
 import           Data.Functor.Classes
 import           Data.Matchable

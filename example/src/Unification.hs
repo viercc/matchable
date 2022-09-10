@@ -22,8 +22,7 @@ module Unification(
 
 import           Data.Foldable       (toList)
 import           Data.Maybe          (fromMaybe)
-import           Data.Semigroup
-import           Data.Monoid         (Monoid(..))
+import           Data.Monoid (Any(..))
 
 import           Control.Monad.Free
 import           Data.Matchable
