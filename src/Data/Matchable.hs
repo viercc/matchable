@@ -244,30 +244,29 @@ instance (Eq k, Hashable k) => Matchable (HashMap k) where
 instance (Generic1 f, Matchable' (Rep1 f)) => Matchable (Generically1 f) where
   zipMatchWith f (Generically1 x) (Generically1 y) = Generically1 <$> genericZipMatchWith f x y
 
--- * Generic definition
-
-{-|
+{- * Generic definition
 
 An instance of Matchable can be implemened through GHC Generics.
-You only need to do two things: Make your type @Functor@ and @Generic1@.
+As a prerequisite, you need to make your type an instance of 'Functor' and 'Generic1'.
+Both of them can be derived using DeriveFunctor and DeriveGeneric extension.
 
-==== Example
+Using 'Generically1' and DerivingVia extension, @Matchable@ instance can be automatically derived.
+
 >>> :set -XDeriveFunctor
 >>> :set -XDeriveGeneric
+>>> :set -XDerivingVia
 >>> :{
   data MyTree label a = Leaf a | Node label [MyTree label a]
-    deriving (Show, Read, Eq, Ord, Functor, Generic1)
+    deriving stock (Show, Read, Eq, Ord, Functor, Generic1)
+    deriving (Eq1, Matchable) via (Generically1 (MyTree label))
 :}
 
-Then you can use @genericZipMatchWith@ to implement @zipMatchWith@ method.
-You also need @Eq1@ instance, but 'liftEqDefault' is provided.
+Alternatively, you can use 'genericZipMatchWith' to manually define @zipMatchWith@ method.
 
->>> :{
-  instance (Eq label) => Matchable (MyTree label) where
-    zipMatchWith = genericZipMatchWith
-  instance (Eq label) => Eq1 (MyTree label) where
-    liftEq = liftEqDefault
-  :}
+> instance (Eq label) => Matchable (MyTree label) where
+>   zipMatchWith = genericZipMatchWith
+> instance (Eq label) => Eq1 (MyTree label) where
+>   liftEq = liftEqDefault
 
 >>> zipMatch (Node "foo" [Leaf 1, Leaf 2]) (Node "foo" [Leaf 'a', Leaf 'b'])
 Just (Node "foo" [Leaf (1,'a'),Leaf (2,'b')])
