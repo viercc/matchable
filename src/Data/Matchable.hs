@@ -6,6 +6,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ConstraintKinds #-}
 module Data.Matchable(
   -- * Matchable class
   Matchable(..),
@@ -15,7 +16,11 @@ module Data.Matchable(
   liftEqDefault,
 
   -- * Define Matchable by Generic
-  Matchable'(), genericZipMatchWith,
+  genericZipMatch,
+  genericZipMatchWith,
+
+  -- * Deprecated
+  Matchable'
 ) where
 
 import           Control.Applicative
@@ -25,6 +30,7 @@ import Data.Functor.Classes.Orphans ()
 
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Foldable
+import           Data.Coerce(Coercible, coerce)
 
 import           Data.Functor.Identity
 import           Data.Functor.Compose
@@ -207,6 +213,12 @@ instance Matchable Seq where
     | otherwise                      = Nothing
 
 instance (Eq k) => Matchable (Map k) where
+  zipMatch as bs
+    | Map.size as == Map.size bs =
+        Map.fromDistinctAscList <$>
+          zipMatchWith zipMatch (Map.toAscList as) (Map.toAscList bs)
+    | otherwise                  = Nothing
+  
   zipMatchWith u as bs
     | Map.size as == Map.size bs =
         Map.fromDistinctAscList <$>
@@ -244,7 +256,8 @@ instance (Eq k, Hashable k) => Matchable (HashMap k) where
     | otherwise = Nothing
 
 instance (Generic1 f, Matchable' (Rep1 f)) => Matchable (Generically1 f) where
-  zipMatchWith f (Generically1 x) (Generically1 y) = Generically1 <$> genericZipMatchWith f x y
+  zipMatch (Generically1 x) (Generically1 y) = Generically1 <@> genericZipMatch x y
+  zipMatchWith f (Generically1 x) (Generically1 y) = Generically1 <@> genericZipMatchWith f x y
 
 {- * Generic definition
 
@@ -278,61 +291,91 @@ Nothing
 Nothing
 
 -}
-class (Functor t, Eq1 t) => Matchable' t where
-  zipMatchWith' :: (a -> b -> Maybe c) -> t a -> t b -> Maybe (t c)
 
--- | zipMatchWith via Generics.
+-- | 'zipMatch' via Generics.
+genericZipMatch
+  :: (Generic1 t, Matchable (Rep1 t))
+  => t a -> t b -> Maybe (t (a,b))
+genericZipMatch ta tb = to1 <$> zipMatch (from1 ta) (from1 tb)
+{-# INLINABLE genericZipMatch #-}
+
+-- | 'zipMatchWith' via Generics.
 genericZipMatchWith
-  :: (Generic1 t, Matchable' (Rep1 t))
+  :: (Generic1 t, Matchable (Rep1 t))
   => (a -> b -> Maybe c)
-  -> t a
-  -> t b
-  -> Maybe (t c)
-genericZipMatchWith u ta tb = to1 <$> zipMatchWith' u (from1 ta) (from1 tb)
+  -> t a -> t b -> Maybe (t c)
+genericZipMatchWith u ta tb = to1 <$> zipMatchWith u (from1 ta) (from1 tb)
 {-# INLINABLE genericZipMatchWith #-}
 
-instance Matchable' V1 where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' _ a _ = case a of { }
 
-instance Matchable' U1 where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' _ _ _ = pure U1
+instance Matchable V1 where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith _ a _ = case a of { }
 
-instance Matchable' Par1 where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' u (Par1 a) (Par1 b) = Par1 <$> u a b
+instance Matchable U1 where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith _ _ _ = Just U1
 
-instance Matchable f => Matchable' (Rec1 f) where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' u (Rec1 fa) (Rec1 fb) = Rec1 <$> zipMatchWith u fa fb
+instance Matchable Par1 where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith u (Par1 a) (Par1 b) = Par1 <@> u a b
+  
+  {-# INLINABLE zipMatch #-}
+  zipMatch (Par1 a) (Par1 b) = Just (Par1 (a,b))
 
-instance (Eq c) => Matchable' (K1 i c) where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' _ (K1 ca) (K1 cb)
-    = if ca == cb then pure (K1 ca) else empty
+instance Matchable f => Matchable (Rec1 f) where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith u (Rec1 fa) (Rec1 fb) = Rec1 <@> zipMatchWith u fa fb
 
-instance Matchable' f => Matchable' (M1 i c f) where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' u (M1 fa) (M1 fb) = M1 <$> zipMatchWith' u fa fb
+  {-# INLINABLE zipMatch #-}
+  zipMatch (Rec1 fa) (Rec1 fb) = Rec1 <@> zipMatch fa fb
 
-instance (Matchable' f, Matchable' g) => Matchable' (f :+: g) where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' u (L1 fa) (L1 fb) = L1 <$> zipMatchWith' u fa fb
-  zipMatchWith' u (R1 ga) (R1 gb) = R1 <$> zipMatchWith' u ga gb
-  zipMatchWith' _ _       _       = empty
 
-instance (Matchable' f, Matchable' g) => Matchable' (f :*: g) where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' u (fa :*: ga) (fb :*: gb) =
-    liftA2 (:*:) (zipMatchWith' u fa fb) (zipMatchWith' u ga gb)
+instance (Eq c) => Matchable (K1 i c) where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith _ (K1 ca) (K1 cb)
+    = if ca == cb then Just (K1 ca) else empty
 
-instance (Matchable f, Matchable' g) => Matchable' (f :.: g) where
-  {-# INLINABLE zipMatchWith' #-}
-  zipMatchWith' u (Comp1 fga) (Comp1 fgb) =
-    Comp1 <$> zipMatchWith (zipMatchWith' u) fga fgb
+instance Matchable f => Matchable (M1 i c f) where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith u (M1 fa) (M1 fb) = M1 <@> zipMatchWith u fa fb
+
+  {-# INLINABLE zipMatch #-}
+  zipMatch (M1 fa) (M1 fb) = M1 <@> zipMatch fa fb
+
+instance (Matchable f, Matchable g) => Matchable (f :+: g) where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith u (L1 fa) (L1 fb) = L1 <$> zipMatchWith u fa fb
+  zipMatchWith u (R1 ga) (R1 gb) = R1 <$> zipMatchWith u ga gb
+  zipMatchWith _ _       _       = empty
+
+  {-# INLINABLE zipMatch #-}
+  zipMatch (L1 fa) (L1 fb) = L1 <$> zipMatch fa fb
+  zipMatch (R1 ga) (R1 gb) = R1 <$> zipMatch ga gb
+  zipMatch _       _       = empty
+
+instance (Matchable f, Matchable g) => Matchable (f :*: g) where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith u (fa :*: ga) (fb :*: gb) =
+    liftA2 (:*:) (zipMatchWith u fa fb) (zipMatchWith u ga gb)
+  
+  {-# INLINABLE zipMatch #-}
+  zipMatch (fa :*: ga) (fb :*: gb) =
+    liftA2 (:*:) (zipMatch fa fb) (zipMatch ga gb)
+
+instance (Matchable f, Matchable g) => Matchable (f :.: g) where
+  {-# INLINABLE zipMatchWith #-}
+  zipMatchWith u (Comp1 fga) (Comp1 fgb) =
+    Comp1 <@> zipMatchWith (zipMatchWith u) fga fgb
+
+  {-# INLINABLE zipMatch #-}
+  zipMatch (Comp1 fga) (Comp1 fgb) =
+    Comp1 <@> zipMatchWith zipMatch fga fgb
 
 -- Utility functions
+
+(<@>) :: Coercible (f a) (f b) => arr a b -> f a -> f b
+_ <@> fa = coerce fa
 
 unsafeFillIn :: (Traversable f) => (a -> b -> Maybe c) -> f a -> [b] -> Maybe (f c)
 unsafeFillIn u as bs = fst <$> runFillIn (traverse (useOne u) as) bs
@@ -352,3 +395,10 @@ useOne u a = FillIn $ \bs -> case bs of
   [] -> Nothing
   (b:bs') -> u a b >>= \c -> Just (c, bs')
 
+-- | Until /version 1.2.1/, @Matchable@ and @Matchable'@ was separate class with
+--   almost equal functionality and instances.
+--
+--   This is no longer the case, but the name @Matchable'@ is exported to keep
+--   backward incompatibility minimum.
+type Matchable' = Matchable
+{-# DEPRECATED Matchable' "became a synonym of Matchable" #-}
