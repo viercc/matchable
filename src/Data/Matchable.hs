@@ -4,6 +4,8 @@
 {-# LANGUAGE TypeOperators    #-}
 {-# LANGUAGE DeriveFunctor    #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia #-}
 module Data.Matchable(
   -- * Matchable class
   Matchable(..),
@@ -160,41 +162,41 @@ liftEqDefault eq tx ty =
 
 -----------------------------------------------
 
-instance Matchable Identity where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 Identity)
+  instance Matchable Identity
 
-instance (Eq k) => Matchable (Const k) where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 (Const k))
+  instance (Eq k) => Matchable (Const k)
 
-instance (Matchable f, Matchable g) => Matchable (Product f g) where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 (Product f g))
+  instance (Matchable f, Matchable g) => Matchable (Product f g)
 
-instance (Matchable f, Matchable g) => Matchable (Sum f g) where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 (Sum f g))
+  instance (Matchable f, Matchable g) => Matchable (Sum f g)
 
-instance (Matchable f, Matchable g) => Matchable (Compose f g) where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 (Compose f g))
+  instance (Matchable f, Matchable g) => Matchable (Compose f g)
 
 instance Matchable Proxy where
   zipMatchWith _ _ _ = Just Proxy
 
-instance Matchable (Tagged t) where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 (Tagged t))
+  instance Matchable (Tagged t)
 
-instance Matchable Maybe where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 Maybe)
+  instance Matchable Maybe
 
-instance Matchable [] where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 [])
+  instance Matchable []
 
-instance Matchable NonEmpty where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 NonEmpty)
+  instance Matchable NonEmpty
 
-instance (Eq e) => Matchable ((,) e) where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 ((,) e))
+  instance (Eq e) => Matchable ((,) e)
 
-instance (Eq e) => Matchable (Either e) where
-  zipMatchWith = genericZipMatchWith
+deriving via (Generically1 (Either e))
+  instance (Eq e) => Matchable (Either e)
 
 instance Matchable Seq where
   zipMatch as bs
