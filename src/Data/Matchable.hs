@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE TypeOperators    #-}
 {-# LANGUAGE DeriveFunctor    #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Data.Matchable(
   -- * Matchable class
   Matchable(..),
@@ -17,7 +18,8 @@ module Data.Matchable(
 
 import           Control.Applicative
 
-import           Data.Functor.Classes
+import Data.Functor.Classes ( Eq1 )
+import Data.Functor.Classes.Orphans ()
 
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Foldable
@@ -48,7 +50,18 @@ import           Data.Hashable          (Hashable)
 import           Data.HashMap.Lazy      (HashMap)
 import qualified Data.HashMap.Lazy      as HashMap
 
-import           GHC.Generics
+import GHC.Generics
+    ( Generic1(..),
+      V1,
+      U1(..),
+      Par1(Par1),
+      Rec1(Rec1),
+      K1(K1),
+      M1(M1),
+      type (:+:)(..),
+      type (:*:)(..),
+      type (:.:)(Comp1) )
+import GHC.Generics.Generically ( Generically1(..) )
 
 -- $setup
 -- This is required to silence "type defaults" warning, which clutters GHCi
@@ -228,6 +241,9 @@ instance (Eq k, Hashable k) => Matchable (HashMap k) where
         HashMap.traverseWithKey (\k a -> u a =<< HashMap.lookup k bs) as
     | otherwise = Nothing
 
+instance (Generic1 f, Matchable' (Rep1 f)) => Matchable (Generically1 f) where
+  zipMatchWith f (Generically1 x) (Generically1 y) = Generically1 <$> genericZipMatchWith f x y
+
 -- * Generic definition
 
 {-|
@@ -261,7 +277,7 @@ Nothing
 Nothing
 
 -}
-class Matchable' t where
+class (Functor t, Eq1 t) => Matchable' t where
   zipMatchWith' :: (a -> b -> Maybe c) -> t a -> t b -> Maybe (t c)
 
 -- | zipMatchWith via Generics.
