@@ -19,8 +19,7 @@ for v in $compiler_versions; do
            matchable matchable-th
     
     echo Build examples
-    $cabal v2-build \
-           --enable-tests $build_opt \
+    $cabal v2-build $build_opt \
            matchable-examples
     
     echo Run tests
@@ -31,10 +30,10 @@ for v in $compiler_versions; do
     echo Install doctest for the current compiler
     doctest_dir="./doctest-bin/ghc-${ghc_exact_ver}"
     mkdir -p "$doctest_dir"
-    $cabal v2-install $build_opt \
+    $cabal v2-install -v0 $build_opt \
       "--installdir=$doctest_dir" --overwrite-policy=always \
       doctest --allow-newer
 
     echo Run doctest
-    $cabal v2-repl "--with-ghc=$doctest_dir/doctest"
+    $cabal v2-repl -v0 "--with-ghc=$doctest_dir/doctest"
 done
