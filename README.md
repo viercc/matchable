@@ -1,15 +1,14 @@
 [![Haskell CI](https://github.com/viercc/matchable/actions/workflows/haskell.yml/badge.svg)](https://github.com/viercc/matchable/actions/workflows/haskell.yml)
 
-
 ## matchable
 
 This package defines a type class `Matchable`,
 which provides `zipMatch` operation for zipping two values of a
 container type.
 
-`zipMatch` operation can fail, and it returns zipped value wrapped
+The `zipMatch` operation can fail. It returns the zipped value wrapped
 in `Maybe`. Specifically, `zipMatch` returns zipped value if and only if two arguments
-have exactly same shape.
+have the exactly same shape.
 
 ### Example
 

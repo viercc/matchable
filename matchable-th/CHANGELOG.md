@@ -1,3 +1,8 @@
+# 0.1.2.1
+
+- Require cabal-version: 2.0
+- The library itself is unchanged. Update of the test code only.
+
 # 0.1.2.0
 
 - Fail correctly, with appropriate error message, when deriving Matchable
