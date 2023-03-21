@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['8.8.4', '8.10.7', '9.0.2', '9.2.4', '9.4.2']
+        ghc: ['9.0.2', '9.2.7', '9.4.4', '9.6.1']
     name: Build on GHC ${{ matrix.ghc }}
     runs-on: ubuntu-latest
     
@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['8.8.4', '8.10.7', '9.0.2', '9.2.4']
+        ghc: ['9.0.2', '9.2.7', '9.4.4', '9.6.1']
     needs: build
     name: Test on GHC ${{ matrix.ghc }}
     runs-on: ubuntu-latest
