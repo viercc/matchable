@@ -4,7 +4,7 @@ This package provides TemplateHaskell functions to
 generate instances of `Matchable` and `Bimatchable` type classes,
 which are from `matchable` package.
 
-### Example
+### Examples
 
 ``` haskell
 {-# LANGUAGE DeriveFunctor #-}
@@ -36,23 +36,37 @@ import Data.Matchable.TH
 
 -- Most simple case
 data BiF a b = BiF0 | BiF1 a b
+  deriving (Show, Eq)
+
+$(deriveBimatchable ''BiF)
+
+instance Eq a => Eq1 (BiF a) where
+  liftEq = liftEq2Default (==)
 
 instance Eq2 BiF where
   liftEq2 = liftEq2Default
 
+instance Functor (BiF a) where
+  fmap = bimapRecovered id
+
 instance Bifunctor BiF where
   bimap = bimapRecovered
 
-$(deriveBimatchable ''BiF)
-
 -- Test case for using [], tuple, and another Bimatchable instance
 data BiG a b = BiG0 | BiG1 [a] [b] | BiG2 (Int, BiF a b)
+  deriving (Show, Eq)
+
+$(deriveBimatchable ''BiG)
+
+instance Eq a => Eq1 (BiG a) where
+  liftEq = liftEq2Default (==)
 
 instance Eq2 BiG where
   liftEq2 = liftEq2Default
 
+instance Functor (BiG a) where
+  fmap = bimapRecovered id
+
 instance Bifunctor BiG where
   bimap = bimapRecovered
-
-$(deriveBimatchable ''BiG)
 ```
