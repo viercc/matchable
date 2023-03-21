@@ -2,18 +2,15 @@
 
 set -ue
 
-compiler_versions="8.8.4 8.10.7 9.0.2 9.2.4"
-next_compiler_version="9.4.2"
+compiler_versions="9.0 9.2 9.4 9.6"
 
-for v in $compiler_versions $next_compiler_version; do
-    cabal="ghcup run --ghc $v --cabal latest -- cabal --config-file=$HOME/.cabal/config_nohaddock"
-    echo == ghc-$v ==
+for v in $compiler_versions; do
+    ghc_exact_ver=$(ghcup run --ghc $v -- ghc --numeric-version)
+    cabal="ghcup run --ghc $ghc_exact_ver --cabal latest -- cabal --config-file=$HOME/.cabal/config_nohaddock"
+    echo == ghc-${ghc_exact_ver} ==
     
     echo Build the library
     build_opt="-v0 -j4"
-    # 
-    #     build_opt="$build_opt --project-file=cabal.project.ghc-9.2.0-rc1 --allow-newer"
-    # fi
     test_opt="--test-show-details=failures"
     
     $cabal v2-build \
@@ -31,15 +28,13 @@ for v in $compiler_versions $next_compiler_version; do
            matchable:matchable-test\
            matchable-th:matchable-th-test
     
-    if [ ! "v$v" == v$next_compiler_version ]; then
-       echo Install doctest for the current compiler
-       doctest_dir="./doctest-bin/ghc-${v}"
-       mkdir -p "$doctest_dir"
-       $cabal v2-install $build_opt \
-         "--installdir=$doctest_dir" --overwrite-policy=always \
-         doctest --allow-newer
+    echo Install doctest for the current compiler
+    doctest_dir="./doctest-bin/ghc-${ghc_exact_ver}"
+    mkdir -p "$doctest_dir"
+    $cabal v2-install $build_opt \
+      "--installdir=$doctest_dir" --overwrite-policy=always \
+      doctest --allow-newer
 
-       echo Run doctest
-       $cabal v2-repl "--with-ghc=$doctest_dir/doctest"
-    fi
+    echo Run doctest
+    $cabal v2-repl "--with-ghc=$doctest_dir/doctest"
 done
