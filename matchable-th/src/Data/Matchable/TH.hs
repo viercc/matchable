@@ -1,21 +1,195 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE MultiWayIf      #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveFunctor #-}
 module Data.Matchable.TH (
+  deriveInstances,
+
   deriveMatchable, makeZipMatchWith,
-  deriveBimatchable, makeBizipMatchWith
+  deriveBimatchable, makeBizipMatchWith,
+
+  makeLiftEq, makeLiftEq2
 ) where
 
+import           Data.Bifunctor (Bifunctor (..))
+import           Data.Traversable (forM)
 import           Data.Bimatchable             (Bimatchable (..))
 import           Data.Matchable               (Matchable (..))
-
-import           Data.Monoid                  (Monoid (..))
-import           Data.Semigroup               (Semigroup (..))
+import Data.Functor.Classes ( Eq2(..), Eq1(..) )
 
 import           Language.Haskell.TH hiding (TyVarBndr(..))
 import           Language.Haskell.TH.Datatype (ConstructorInfo (..),
                                                DatatypeInfo (..), reifyDatatype)
 import           Language.Haskell.TH.Datatype.TyVarBndr
+
+import Data.Bifunctor.TH ( makeBimap )
+import Data.Monoid (Any (..))
+
+import Data.Matchable.TH.Matcher
+
+warnStrat :: Maybe DerivStrategy -> Q ()
+warnStrat Nothing = pure ()
+warnStrat (Just strat) = reportWarning $ "Specifying deriving strategy have no effect: " ++ show strat
+
+data Deriver = Deriver { _className :: Name, _methodDerivers :: [(Name, Name -> Q Exp)] }
+
+deriveInstanceWith :: Deriver -> Cxt -> Type -> Q [Dec]
+deriveInstanceWith deriver context ty =
+  case spine ty of
+    (ConT dataCon, _) -> do
+      methods <- forM (_methodDerivers deriver) $ \(methodName, makeImpl) -> do
+        impl <- makeImpl dataCon
+        pure $ FunD methodName [ Clause [] (NormalB impl) [] ]
+      pure [InstanceD Nothing context (ConT (_className deriver) `AppT` ty) methods]
+    _ -> do reportError ("Instance declaration must be of shape Cls (TyCon ty1 ty2 ...), but it's" ++ show ty)
+            pure []
+
+-- | This function transforms multiple instance declarations written in @StandaloneDeriving@
+--   format to instances derived by TemplateHaskell.
+--
+--   ==== Example
+--   
+--   @
+--   {-# LANGUAGE DeriveFunctor #-}
+--   {-# LANGUAGE StandaloneDeriving #-}
+--   [-# LANGUAGE TemplateHaskell #-}
+--   data Foo a b = Foo a b (Either a b)
+--      deriving (Show, Eq, Functor)
+--   @
+--   
+--   To use 'deriveInstances' for @Foo@, write as below:
+--
+--   @
+--   deriveInstances [d|
+--     deriving instance Eq a => Eq1 (Foo a)
+--     deriving instance Eq a => Matchable (Foo a)
+--     deriving instance Eq2 Foo
+--     deriving instance Bifunctor Foo
+--     deriving instance Bimatchable Foo
+--     |]
+--   @
+
+deriveInstances :: Q [Dec] -> Q [Dec]
+deriveInstances decsQ = do
+  decs <- decsQ
+  derivedDecss <- mapM deriveInstance decs
+  pure $ concat derivedDecss
+
+deriveInstance :: Dec -> Q [Dec]
+deriveInstance dec = case dec of
+  StandaloneDerivD strat context typ -> case typ of
+    AppT (ConT cls) typ'
+      | cls == ''Eq      -> reportWarning "Use stock deriving for Eq" >> pure [dec]
+      | cls == ''Functor -> reportWarning "Use stock deriving for Functor" >> pure [dec]
+      | cls == ''Bifunctor -> warnStrat strat >> deriveInstanceWith bifunctorDeriver context typ'
+      | cls == ''Eq1     -> warnStrat strat >> deriveInstanceWith eq1Deriver context typ'
+      | cls == ''Matchable -> warnStrat strat >> deriveInstanceWith matchableDeriver context typ'
+      | cls == ''Eq2     -> warnStrat strat >> deriveInstanceWith eq2Deriver context typ'
+      | cls == ''Bimatchable -> warnStrat strat >> deriveInstanceWith bimatchableDeriver context typ'
+    _ -> reportError ("Unsupported Instance: " ++ show typ) >> pure []
+  _ -> reportError "Use standalone deriving declarations only" >> pure []
+
+bifunctorDeriver, eq1Deriver, matchableDeriver, eq2Deriver, bimatchableDeriver :: Deriver
+bifunctorDeriver = Deriver ''Bifunctor [ ('bimap, makeBimap) ]
+eq1Deriver = Deriver ''Eq1 [ ('liftEq, makeLiftEq) ]
+
+eq2Deriver = Deriver ''Eq2 [ ('liftEq2, makeLiftEq2 ) ]
+matchableDeriver = Deriver ''Matchable [ ('zipMatchWith, makeZipMatchWith) ]
+bimatchableDeriver = Deriver ''Bimatchable [ ('bizipMatchWith, makeBizipMatchWith) ]
+
+makeLiftEq :: Name -> Q Exp
+makeLiftEq name = do
+  DatatypeInfo { datatypeVars = dtVarsNames , datatypeCons = cons }
+     <- reifyDatatype name
+  tyA <- case viewLast dtVarsNames of
+    Nothing -> fail $ "Not a type constructor:" ++ show name
+    Just (_, a) -> return (VarT (tvName a))
+  
+  eq <- newName "eq"
+
+  matchClauses <- forM cons $
+    \(ConstructorInfo ctrName _ _ fields _ _) -> do
+        matcher <- combineMatchers (conP ctrName) andBoolExprs <$> mapM (dEq1Field tyA eq) fields
+        let Any bodyUsesF = additionalInfo matcher
+            fPat = if bodyUsesF then varP eq else wildP
+        return $ clause [fPat, leftPat matcher, rightPat matcher] (normalB (bodyExp matcher)) []
+  let mismatchClause = clause [ wildP, wildP, wildP ] (normalB [| False |]) []
+      finalClauses = case cons of
+        []  -> []
+        [_] -> matchClauses
+        _   -> matchClauses ++ [mismatchClause]
+  
+  lifteq <- newName "lifteq"
+  letE [ funD lifteq finalClauses ] (varE lifteq)
+
+dEq1Field :: Type -> Name -> Type -> Q (Matcher Any)
+dEq1Field tyA fName = go
+  where
+    isConst t = not (occurs tyA t)
+
+    go ty = case ty of
+      _ | ty == tyA -> funMatcher (varE fName) (Any True)
+        | isConst ty -> funMatcher ([| (==) |]) (Any False)
+      AppT g ty' | isConst g -> do
+        matcher <- go ty'
+        liftMatcher [| liftEq |] matcher
+      AppT (AppT g ty1') ty2' | isConst g -> do
+        matcher1 <- go ty1'
+        matcher2 <- go ty2'
+        liftMatcher2 [| liftEq2 |] matcher1 matcher2
+      (spine -> (TupleT _, subtys)) -> do
+        matchers <- mapM go (reverse subtys)
+        pure $ combineMatchers tupP andBoolExprs matchers
+      _ -> unexpectedType ty "Eq1"
+
+makeLiftEq2 :: Name -> Q Exp
+makeLiftEq2 name = do
+  DatatypeInfo { datatypeVars = dtVarsNames , datatypeCons = cons }
+     <- reifyDatatype name
+  (tyA, tyB) <- case viewLastTwo dtVarsNames of
+    Nothing -> fail $ "Not a type constructor:" ++ show name
+    Just (_, a, b) -> return (VarT (tvName a), VarT (tvName b))
+  
+  eqA <- newName "eqA"
+  eqB <- newName "eqB"
+
+  matchClauses <- forM cons $
+    \(ConstructorInfo ctrName _ _ fields _ _) -> do
+        matcher <- combineMatchers (conP ctrName) andBoolExprs <$> mapM (dEq2Field tyA eqA tyB eqB) fields
+        let (Any bodyUsesF, Any bodyUsesG) = additionalInfo matcher
+            fPat = if bodyUsesF then varP eqA else wildP
+            gPat = if bodyUsesG then varP eqB else wildP
+        return $ clause [fPat, gPat, leftPat matcher, rightPat matcher] (normalB (bodyExp matcher)) []
+  let mismatchClause = clause [ wildP, wildP, wildP, wildP ] (normalB [| False |]) []
+      finalClauses = case cons of
+        []  -> []
+        [_] -> matchClauses
+        _   -> matchClauses ++ [mismatchClause]
+  
+  lifteq <- newName "lifteq"
+  letE [ funD lifteq finalClauses ] (varE lifteq)
+
+dEq2Field :: Type -> Name -> Type -> Name -> Type -> Q (Matcher (Any, Any))
+dEq2Field tyA fName tyB gName = go
+  where
+    isConst t = not (occurs tyA t || occurs tyB t)
+
+    go ty = case ty of
+      _ | ty == tyA -> funMatcher (varE fName) (Any True, Any False)
+        | ty == tyB -> funMatcher (varE gName) (Any False, Any True)
+        | isConst ty -> funMatcher ([| (==) |]) mempty
+      AppT g ty' | isConst g -> do
+        matcher <- go ty'
+        liftMatcher [| liftEq |] matcher
+      AppT (AppT g ty1') ty2' | isConst g -> do
+        matcher1 <- go ty1'
+        matcher2 <- go ty2'
+        liftMatcher2 [| liftEq2 |] matcher1 matcher2
+      (spine -> (TupleT _, subtys)) -> do
+        matchers <- mapM go (reverse subtys)
+        pure $ combineMatchers tupP andBoolExprs matchers
+      _ -> unexpectedType ty "Eq1"
 
 -- | Build an instance of 'Matchable' for a data type.
 --
@@ -36,22 +210,20 @@ import           Language.Haskell.TH.Datatype.TyVarBndr
 -- @
 deriveMatchable :: Name -> Q [Dec]
 deriveMatchable name = do
-  ((ctx, f), zipMatchWithE) <- makeZipMatchWith' name
+  ((ctx, f), zipMatchWithClauses) <- makeZipMatchWith' name
 
-  dec <- instanceD ctx (appT (conT ''Matchable) (pure f))
-           [ funD 'zipMatchWith [clause [] (normalB zipMatchWithE) []] ]
+  dec <- instanceD (pure ctx) (appT (conT ''Matchable) (pure f))
+           [ funD 'zipMatchWith zipMatchWithClauses ]
 
   pure [dec]
 
 makeZipMatchWith :: Name -> ExpQ
-makeZipMatchWith name = makeZipMatchWith' name >>= snd
+makeZipMatchWith name = do
+  (_, clauses) <- makeZipMatchWith' name
+  z <- newName "z"
+  letE [ funD z clauses ] (varE z)
 
-viewLast :: [a] -> Maybe ([a], a)
-viewLast as = case reverse as of
-  [] -> Nothing
-  a:rest -> Just (reverse rest, a)
-
-makeZipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
+makeZipMatchWith' :: Name -> Q ((Cxt, Type), [Q Clause])
 makeZipMatchWith' name = do
   info <- reifyDatatype name
   let DatatypeInfo { datatypeVars = dtVarsNames , datatypeCons = cons } = info
@@ -61,140 +233,52 @@ makeZipMatchWith' name = do
   
   f <- newName "f"
 
-  let mkMatchClause (ConstructorInfo ctrName _ _ fields _ _) =
-        do matchers <- mapM (dMatchField tyA f) fields
-           let lFieldsP = leftPat <$> matchers
-               rFieldsP = rightPat <$> matchers
-               bodyUsesF = any additionalInfo matchers
-               body = foldl (\x y -> [| $x <*> $y |])
-                            [| pure $(conE ctrName) |]
-                            (bodyExp <$> matchers)
-               ctx = concatMap requiredCtx matchers
-               fPat = if bodyUsesF then varP f else wildP
-               lPat = conP ctrName lFieldsP
-               rPat = conP ctrName rFieldsP
-           return (clause [fPat, lPat, rPat] (normalB body) [], ctx)
+  matchClausesAndCtxs <- forM cons $
+    \(ConstructorInfo ctrName _ _ fields _ _) -> do
+        let body = foldl (\x y -> [| $x <*> $y |]) [| pure $(conE ctrName) |]
+        matcher <- combineMatchers (conP ctrName) body <$> mapM (dMatchField tyA f) fields
+        let (ctx, Any bodyUsesF) = additionalInfo matcher
+            fPat = if bodyUsesF then varP f else wildP
+        return $ (ctx, clause [fPat, leftPat matcher, rightPat matcher] (normalB (bodyExp matcher)) [])
 
-  matchClausesAndCtxs <- mapM mkMatchClause cons
-
-  let matchClauses = map fst matchClausesAndCtxs
-      ctx = concatMap snd matchClausesAndCtxs
+  let matchClauses = map snd matchClausesAndCtxs
+      ctx = concatMap fst matchClausesAndCtxs
       mismatchClause = clause [ wildP, wildP, wildP ] (normalB [| Nothing |]) []
       finalClauses = case cons of
         []  -> []
         [_] -> matchClauses
         _   -> matchClauses ++ [mismatchClause]
 
-  zmw <- newName "zmw"
-  return ((sequenceA ctx, dtFunctor), letE [ funD zmw finalClauses ] (varE zmw))
+  return ((ctx, dtFunctor), finalClauses)
 
-data Matcher u = Matcher
-  { leftPat        :: PatQ
-  , rightPat       :: PatQ
-  , bodyExp        :: ExpQ
-  , requiredCtx    :: [TypeQ]
-  , additionalInfo :: u }
-
-dMatchField :: Type -> Name -> Type -> Q (Matcher Bool)
-dMatchField tyA fName ty = case spine ty of
-  _ | ty == tyA -> do
-        l <- newName "l"
-        r <- newName "r"
-        return $ Matcher
-          { leftPat = varP l
-          , rightPat = varP r
-          , additionalInfo = True
-          , bodyExp = [| $(varE fName) $(varE l) $(varE r) |]
-          , requiredCtx = [] }
-    | not (occurs tyA ty) -> do
-        l <- newName "l"
-        r <- newName "r"
-        let ctx = [ pure (AppT (ConT ''Eq) ty) | hasTyVar ty ]
-        return $ Matcher
-          { leftPat = varP l
-          , rightPat = varP r
-          , additionalInfo = False
-          , bodyExp = [| if $(varE l) == $(varE r)
-                           then Just $(varE l)
-                           else Nothing |]
-          , requiredCtx = ctx }
-  (ListT, ty':_) -> dWrapped ty'
-  (TupleT n, subtys) -> do
-     matchers <- mapM (dMatchField tyA fName) (reverse subtys)
-     let lP = tupP (leftPat <$> matchers)
-         rP = tupP (rightPat <$> matchers)
-         tupcon = [| pure $(conE (tupleDataName n)) |]
-         anyUsesF = any additionalInfo matchers
-         body = foldl (\x y -> [| $x <*> $y |]) tupcon (bodyExp <$> matchers)
-         ctx = concatMap requiredCtx matchers
-     return $ Matcher
-       { leftPat = lP
-       , rightPat = rP
-       , additionalInfo = anyUsesF
-       , bodyExp = body
-       , requiredCtx = ctx }
-  (ConT tcon, ty' : rest) | all (not . occurs tyA) rest -> do
-     let g = foldr (flip AppT) (ConT tcon) rest
-         ctxG = [ pure (AppT (ConT ''Matchable) g) | hasTyVar g ]
-     matcher <- dWrapped ty'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (ConT tcon, ty1' : ty2' : rest) | all (not . occurs tyA) rest -> do
-     let g = foldr (flip AppT) (ConT tcon) rest
-         ctxG = [ pure (AppT (ConT ''Bimatchable) g) | hasTyVar g ]
-     -- Note that since @spine@ reverses argument order,
-     -- it must be dWrappedBi ty2 ty1.
-     matcher <- dWrappedBi ty2' ty1'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (VarT t, ty' : rest) | all (not . occurs tyA) rest -> do
-     let g = foldr (flip AppT) (VarT t) rest
-         ctxG = [ pure (AppT (ConT ''Matchable) g) ]
-     matcher <- dWrapped ty'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (VarT t, ty1' : ty2' : rest) | all (not . occurs tyA) rest -> do
-     let g = foldr (flip AppT) (VarT t) rest
-         ctxG = [ pure (AppT (ConT ''Bimatchable) g) | hasTyVar g ]
-     matcher <- dWrappedBi ty2' ty1'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (ForallT _ _ _, _) -> unexpectedType ty "Matchable"
-  (ParensT _, _) -> error "Never reach here"
-  (AppT _ _, _) -> error "Never reach here"
-  (SigT _ _, _) -> error "Never reach here"
-  _ -> unexpectedType ty "Matchable"
-
+dMatchField :: Type -> Name -> Type -> Q (Matcher (Cxt, Any))
+dMatchField tyA fName = go
   where
-    dWrapped :: Type -> Q (Matcher Bool)
-    dWrapped ty' =do
-      l <- newName "l"
-      r <- newName "r"
-      (usesF', ctx, fun) <- do
-         matcher <- dMatchField tyA fName ty'
-         let fun = lamE [leftPat matcher, rightPat matcher] (bodyExp matcher)
-         return (additionalInfo matcher, requiredCtx matcher, fun)
-      return $ Matcher
-        { leftPat = varP l
-        , rightPat = varP r
-        , additionalInfo = usesF'
-        , bodyExp = [| zipMatchWith $fun $(varE l) $(varE r) |]
-        , requiredCtx = ctx }
+    isConst = not . occurs tyA
 
-    dWrappedBi :: Type -> Type -> Q (Matcher Bool)
-    dWrappedBi ty1 ty2 = do
-      l <- newName "l"
-      r <- newName "r"
-      (usesF', ctx, fun1, fun2) <- do
-         matcher1 <- dMatchField tyA fName ty1
-         matcher2 <- dMatchField tyA fName ty2
-         let fun1 = lamE [leftPat matcher1, rightPat matcher1] (bodyExp matcher1)
-             fun2 = lamE [leftPat matcher2, rightPat matcher2] (bodyExp matcher2)
-             usesF' = additionalInfo matcher1 || additionalInfo matcher2
-             ctx = requiredCtx matcher1 ++ requiredCtx matcher2
-         return (usesF', ctx, fun1, fun2)
-      return $ Matcher
-        { leftPat = varP l
-        , rightPat = varP r
-        , additionalInfo = usesF'
-        , bodyExp = [| bizipMatchWith $fun1 $fun2 $(varE l) $(varE r) |]
-        , requiredCtx = ctx }
+    go ty = case ty of
+      _ | ty == tyA -> funMatcher (varE fName) ([], Any True)
+        | isConst ty -> 
+            let ctx = [ AppT (ConT ''Eq) ty | hasTyVar ty ]
+            in matcherExpr
+                  (\l r -> [| if $l == $r then Just $l else Nothing |])
+                  (ctx, Any False)
+      (AppT g ty') | isConst g -> do
+        let ctxG = [ AppT (ConT ''Matchable) g | hasTyVar g ]
+        matcher <- go ty'
+        matcher' <- liftMatcher [| zipMatchWith |] matcher
+        return $ (ctxG, mempty) `addInfo` matcher'
+      (AppT (AppT g ty1') ty2') | isConst g -> do
+        let ctxG = [ AppT (ConT ''Bimatchable) g | hasTyVar g ]
+        matcher1 <- go ty1'
+        matcher2 <- go ty2'
+        matcher' <- liftMatcher2 [| bizipMatchWith |] matcher1 matcher2
+        return $ (ctxG, mempty) `addInfo` matcher'
+      (spine -> (TupleT n, subtys)) -> do
+        let body = foldl (\x y -> [| $x <*> $y |]) [| pure $(conE (tupleDataName n)) |]
+        matchers <- mapM go (reverse subtys)
+        pure $ combineMatchers tupP body matchers
+      _ -> unexpectedType ty "Matchable"
 
 -- | Build an instance of 'Bimatchable' for a data type.
 --
@@ -214,22 +298,20 @@ dMatchField tyA fName ty = case spine ty of
 -- @
 deriveBimatchable :: Name -> Q [Dec]
 deriveBimatchable name = do
-  ((ctx, f), zipMatchWithE) <- makeBizipMatchWith' name
+  ((ctx, f), clauses) <- makeBizipMatchWith' name
 
-  dec <- instanceD ctx (appT (conT ''Bimatchable) (pure f))
-           [ funD 'bizipMatchWith [clause [] (normalB zipMatchWithE) []] ]
+  dec <- instanceD (pure ctx) (appT (conT ''Bimatchable) (pure f))
+           [ funD 'bizipMatchWith clauses ]
 
   pure [dec]
 
 makeBizipMatchWith :: Name -> ExpQ
-makeBizipMatchWith name = makeBizipMatchWith' name >>= snd
+makeBizipMatchWith name = do
+  (_, clauses) <- makeBizipMatchWith' name
+  z <- newName "z"
+  letE [ funD z clauses ] (varE z)
 
-viewLastTwo :: [a] -> Maybe ([a],a,a)
-viewLastTwo as = case reverse as of
-  b:a:rest -> Just (reverse rest, a, b)
-  _ -> Nothing
-
-makeBizipMatchWith' :: Name -> Q ((Q Cxt, Type), ExpQ)
+makeBizipMatchWith' :: Name -> Q ((Cxt, Type), [Q Clause])
 makeBizipMatchWith' name = do
   info <- reifyDatatype name
   let DatatypeInfo { datatypeVars = dtVars , datatypeCons = cons } = info
@@ -240,155 +322,55 @@ makeBizipMatchWith' name = do
   f <- newName "f"
   g <- newName "g"
 
-  let mkMatchClause (ConstructorInfo ctrName _ _ fields _ _) =
-        do matchers <- mapM (dBimatchField tyA f tyB g) fields
-           let lFieldsP = leftPat <$> matchers
-               rFieldsP = rightPat <$> matchers
-               Usage2 usesF usesG = foldMap additionalInfo matchers
-               body = foldl (\x y -> [| $x <*> $y |])
-                            [| pure $(conE ctrName) |]
-                            (bodyExp <$> matchers)
-               ctx = concatMap requiredCtx matchers
-               fPat = if usesF then varP f else wildP
-               gPat = if usesG then varP g else wildP
-               lPat = conP ctrName lFieldsP
-               rPat = conP ctrName rFieldsP
-           return (clause [fPat, gPat, lPat, rPat] (normalB body) [], ctx)
+  matchClausesAndCtxs <- forM cons $
+    \(ConstructorInfo ctrName _ _ fields _ _) -> do
+        let body = foldl (\x y -> [| $x <*> $y |]) [| pure $(conE ctrName) |]
+        matcher <- combineMatchers (conP ctrName) body <$> mapM (dBimatchField tyA f tyB g) fields
+        let (ctx, Any bodyUsesF, Any bodyUsesG) = additionalInfo matcher
+            fPat = if bodyUsesF then varP f else wildP
+            gPat = if bodyUsesG then varP g else wildP
+        return $ (ctx, clause [fPat, gPat, leftPat matcher, rightPat matcher] (normalB (bodyExp matcher)) [])
 
-  matchClausesAndCtxs <- mapM mkMatchClause cons
-
-  let matchClauses = map fst matchClausesAndCtxs
-      ctx = concatMap snd matchClausesAndCtxs
+  let matchClauses = map snd matchClausesAndCtxs
+      ctx = concatMap fst matchClausesAndCtxs
       mismatchClause = clause [ wildP, wildP, wildP, wildP ] (normalB [| Nothing |]) []
       finalClauses = case cons of
         []  -> []
         [_] -> matchClauses
         _   -> matchClauses ++ [mismatchClause]
 
-  bzmw <- newName "bzmw"
-  return ((sequenceA ctx, dtFunctor), letE [ funD bzmw finalClauses ] (varE bzmw))
+  return ((ctx, dtFunctor), finalClauses)
 
-data FunUsage2 = Usage2 Bool Bool
-
-instance Semigroup FunUsage2 where
-  Usage2 f1 g1 <> Usage2 f2 g2 = Usage2 (f1 || f2) (g1 || g2)
-
-instance Monoid FunUsage2 where
-  mempty = Usage2 False False
-  mappend = (<>)
-
-dBimatchField :: Type -> Name -> Type -> Name -> Type -> Q (Matcher FunUsage2)
-dBimatchField tyA fName tyB gName ty = case spine ty of
-  _ | ty == tyA -> do
-        l <- newName "l"
-        r <- newName "r"
-        return $ Matcher
-          { leftPat = varP l
-          , rightPat = varP r
-          , additionalInfo = Usage2 True False
-          , bodyExp = [| $(varE fName) $(varE l) $(varE r) |]
-          , requiredCtx = [] }
-    | ty == tyB -> do
-        l <- newName "l"
-        r <- newName "r"
-        return $ Matcher
-          { leftPat = varP l
-          , rightPat = varP r
-          , additionalInfo = Usage2 False True
-          , bodyExp = [| $(varE gName) $(varE l) $(varE r) |]
-          , requiredCtx = [] }
-    | isConst ty -> do
-        l <- newName "l"
-        r <- newName "r"
-        let ctx = [ pure (AppT (ConT ''Eq) ty) | hasTyVar ty ]
-        return $ Matcher
-          { leftPat = varP l
-          , rightPat = varP r
-          , additionalInfo = Usage2 False False
-          , bodyExp = [| if $(varE l) == $(varE r)
-                           then Just $(varE l)
-                           else Nothing |]
-          , requiredCtx = ctx }
-  (ListT, ty':_) -> dWrapped ty'
-  (TupleT n, subtys) -> do
-     matchers <- mapM (dBimatchField tyA fName tyB gName) (reverse subtys)
-     let lP = tupP (leftPat <$> matchers)
-         rP = tupP (rightPat <$> matchers)
-         tupcon = [| pure $(conE (tupleDataName n)) |]
-         anyUsesF = foldMap additionalInfo matchers
-         body = foldl (\x y -> [| $x <*> $y |]) tupcon (bodyExp <$> matchers)
-         ctx = concatMap requiredCtx matchers
-     return $ Matcher
-       { leftPat = lP
-       , rightPat = rP
-       , additionalInfo = anyUsesF
-       , bodyExp = body
-       , requiredCtx = ctx }
-  (ConT tcon, ty' : rest) | all isConst rest -> do
-     let g = foldr (flip AppT) (ConT tcon) rest
-         ctxG = [ pure (AppT (ConT ''Matchable) g) | hasTyVar g ]
-     matcher <- dWrapped ty'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (ConT tcon, ty1' : ty2' : rest) | all isConst rest -> do
-     let g = foldr (flip AppT) (ConT tcon) rest
-         ctxG = [ pure (AppT (ConT ''Bimatchable) g) | hasTyVar g ]
-     -- Note that since @spine@ reverses argument order,
-     -- it must be dWrappedBi ty2 ty1.
-     matcher <- dWrappedBi ty2' ty1'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (VarT t, ty' : rest) | all isConst rest -> do
-     let g = foldr (flip AppT) (VarT t) rest
-         ctxG = [ pure (AppT (ConT ''Matchable) g) ]
-     matcher <- dWrapped ty'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (VarT t, ty1' : ty2' : rest) | all isConst rest -> do
-     let g = foldr (flip AppT) (VarT t) rest
-         ctxG = [ pure (AppT (ConT ''Bimatchable) g) | hasTyVar g ]
-     matcher <- dWrappedBi ty2' ty1'
-     return $ matcher{ requiredCtx = ctxG ++ requiredCtx matcher }
-  (ForallT _ _ _, _) -> unexpectedType ty "Bimatchable"
-  (ParensT _, _) -> error "Never reach here"
-  (AppT _ _, _) -> error "Never reach here"
-  (SigT _ _, _) -> error "Never reach here"
-  _ -> unexpectedType ty "Bimatchable"
-
+dBimatchField :: Type -> Name -> Type -> Name -> Type -> Q (Matcher (Cxt, Any, Any))
+dBimatchField tyA fName tyB gName = go
   where
-    isConst :: Type -> Bool
     isConst t = not (occurs tyA t || occurs tyB t)
-
-    dWrapped :: Type -> Q (Matcher FunUsage2)
-    dWrapped ty' = do
-      l <- newName "l"
-      r <- newName "r"
-      (usesF', ctx, fun) <- do
-         matcher <- dBimatchField tyA fName tyB gName ty'
-         let fun = lamE [leftPat matcher, rightPat matcher] (bodyExp matcher)
-         return (additionalInfo matcher, requiredCtx matcher, fun)
-      return $ Matcher
-        { leftPat = varP l
-        , rightPat = varP r
-        , additionalInfo = usesF'
-        , bodyExp = [| zipMatchWith $fun $(varE l) $(varE r) |]
-        , requiredCtx = ctx }
-
-    dWrappedBi :: Type -> Type -> Q (Matcher FunUsage2)
-    dWrappedBi ty1 ty2 = do
-      l <- newName "l"
-      r <- newName "r"
-      (usesF', ctx, fun1, fun2) <- do
-         matcher1 <- dBimatchField tyA fName tyB gName ty1
-         matcher2 <- dBimatchField tyA fName tyB gName ty2
-         let fun1 = lamE [leftPat matcher1, rightPat matcher1] (bodyExp matcher1)
-             fun2 = lamE [leftPat matcher2, rightPat matcher2] (bodyExp matcher2)
-             usesF' = additionalInfo matcher1 <> additionalInfo matcher2
-             ctx = requiredCtx matcher1 ++ requiredCtx matcher2
-         return (usesF', ctx, fun1, fun2)
-      return $ Matcher
-        { leftPat = varP l
-        , rightPat = varP r
-        , additionalInfo = usesF'
-        , bodyExp = [| bizipMatchWith $fun1 $fun2 $(varE l) $(varE r) |]
-        , requiredCtx = ctx }
+    
+    go ty = case ty of
+      _ | ty == tyA -> funMatcher (varE fName) ([], Any True, Any False)
+        | ty == tyB -> funMatcher (varE gName) ([], Any False, Any True)
+        | isConst ty -> 
+            let ctx = [ AppT (ConT ''Eq) ty | hasTyVar ty ]
+            in matcherExpr
+                  (\l r -> [| if $l == $r then Just $l else Nothing |])
+                  (ctx, Any False, Any False)
+      (AppT g ty') | isConst g -> do
+        let ctxG = [ AppT (ConT ''Matchable) g | hasTyVar g ]
+        matcher <- go ty'
+        matcher' <- liftMatcher [| zipMatchWith |] matcher
+        return $ (ctxG, mempty, mempty) `addInfo` matcher'
+      (AppT (AppT g ty1') ty2') | isConst g -> do
+        let ctxG = [ AppT (ConT ''Bimatchable) g | hasTyVar g ]
+        matcher1 <- go ty1'
+        matcher2 <- go ty2'
+        matcher' <- liftMatcher2 [| bizipMatchWith |] matcher1 matcher2
+        return $ (ctxG, mempty, mempty) `addInfo` matcher'
+      (spine -> (TupleT n, subtys)) -> do
+        matchers <- mapM go (reverse subtys)
+        let body = foldl (\x y -> [| $x <*> $y |]) [| pure $(conE (tupleDataName n)) |]
+        pure $ combineMatchers tupP body matchers
+      _ -> unexpectedType ty "Bimatchable"
+    
 
 -----------------------------
 
@@ -397,6 +379,10 @@ unexpectedType ty cls = fail $
   "unexpected type " ++ show ty ++ " in derivation of " ++ cls ++
   " (it's only possible to implement " ++ cls ++
   " genericaly when all subterms are traversable)"
+
+andBoolExprs :: [Q Exp] -> Q Exp
+andBoolExprs [] = [| True |]
+andBoolExprs xs = foldr1 (\x y -> [| $x && $y |]) xs
 
 spine :: Type -> (Type, [Type])
 spine (ParensT t)  = spine t
@@ -418,3 +404,13 @@ hasTyVar (ParensT t)  = hasTyVar t
 hasTyVar (AppT t1 t2) = hasTyVar t1 || hasTyVar t2
 hasTyVar (SigT t _)   = hasTyVar t
 hasTyVar _            = False
+
+viewLast :: [a] -> Maybe ([a], a)
+viewLast as = case reverse as of
+  [] -> Nothing
+  a:rest -> Just (reverse rest, a)
+
+viewLastTwo :: [a] -> Maybe ([a],a,a)
+viewLastTwo as = case reverse as of
+  b:a:rest -> Just (reverse rest, a, b)
+  _ -> Nothing

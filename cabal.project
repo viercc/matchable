@@ -1,5 +1,4 @@
-packages: ./matchable.cabal
-optional-packages: ./**/*.cabal
+packages: ./matchable.cabal, ./matchable-th/*.cabal
 
 package QuickCheck
     flags: -templateHaskell
