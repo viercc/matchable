@@ -7,7 +7,9 @@ module Data.Matchable.TH (
   deriveInstances,
 
   deriveMatchable, makeZipMatchWith,
-  deriveBimatchable, makeBizipMatchWith
+  deriveBimatchable, makeBizipMatchWith,
+
+  makeLiftEq, makeLiftEq2
 ) where
 
 import           Data.Bifunctor (Bifunctor (..))
@@ -43,6 +45,31 @@ deriveInstanceWith deriver context ty =
     _ -> do reportError ("Instance declaration must be of shape Cls (TyCon ty1 ty2 ...), but it's" ++ show ty)
             pure []
 
+-- | This function transforms multiple instance declarations written in @StandaloneDeriving@
+--   format to instances derived by TemplateHaskell.
+--
+--   ==== Example
+--   
+--   @
+--   {-# LANGUAGE DeriveFunctor #-}
+--   {-# LANGUAGE StandaloneDeriving #-}
+--   [-# LANGUAGE TemplateHaskell #-}
+--   data Foo a b = Foo a b (Either a b)
+--      deriving (Show, Eq, Functor)
+--   @
+--   
+--   To use 'deriveInstances' for @Foo@, write as below:
+--
+--   @
+--   deriveInstances [d|
+--     deriving instance Eq a => Eq1 (Foo a)
+--     deriving instance Eq a => Matchable (Foo a)
+--     deriving instance Eq2 Foo
+--     deriving instance Bifunctor Foo
+--     deriving instance Bimatchable Foo
+--     |]
+--   @
+
 deriveInstances :: Q [Dec] -> Q [Dec]
 deriveInstances decsQ = do
   decs <- decsQ
@@ -61,7 +88,7 @@ deriveInstance dec = case dec of
       | cls == ''Eq2     -> warnStrat strat >> deriveInstanceWith eq2Deriver context typ'
       | cls == ''Bimatchable -> warnStrat strat >> deriveInstanceWith bimatchableDeriver context typ'
     _ -> reportError ("Unsupported Instance: " ++ show typ) >> pure []
-  _ -> reportError "Use instance declarations only" >> pure []
+  _ -> reportError "Use standalone deriving declarations only" >> pure []
 
 bifunctorDeriver, eq1Deriver, matchableDeriver, eq2Deriver, bimatchableDeriver :: Deriver
 bifunctorDeriver = Deriver ''Bifunctor [ ('bimap, makeBimap) ]
