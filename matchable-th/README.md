@@ -8,65 +8,43 @@ which are from `matchable` package.
 
 ``` haskell
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 import Data.Functor.Classes (Eq1(..))
 import Data.Matchable
-import Data.Matchable.TH
+import Data.Matchable.TH ( deriveInstances )
 
 newtype G a = G [(a, Int, a)]
   deriving (Show, Eq, Functor)
 
-$(deriveMatchable ''G)
+deriveInstances [d|
+  deriving instance Eq1 G
+  deriving instance Matchable G
+  |]
 
--- @deriveMatchable@ generates a @Matchable@ instance only,
--- so you also have to declare @Functor G@ and @Eq1 G@.
--- There is a handy @DeriveFunctor@ extension.
--- Also, you can use @liftEqDefault@ to easily implement @liftEq@.
-instance Eq1 G where
-  liftEq = liftEqDefault
 ```
 
 ``` haskell
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-import Data.Functor.Classes (Eq2(..))
-import Data.Bimatchable
-import Data.Matchable.TH
-
--- Most simple case
-data BiF a b = BiF0 | BiF1 a b
-  deriving (Show, Eq)
-
-$(deriveBimatchable ''BiF)
-
-instance Eq a => Eq1 (BiF a) where
-  liftEq = liftEq2Default (==)
-
-instance Eq2 BiF where
-  liftEq2 = liftEq2Default
-
-instance Functor (BiF a) where
-  fmap = bimapRecovered id
-
-instance Bifunctor BiF where
-  bimap = bimapRecovered
+import Data.Functor.Classes ( Eq1, Eq2 )
+import Data.Bifunctor ( Bifunctor(..) )
+import Data.Bimatchable ( Bimatchable )
+import Data.Matchable ( Matchable )
+import Data.Matchable.TH ( deriveInstances )
 
 -- Test case for using [], tuple, and another Bimatchable instance
 data BiG a b = BiG0 | BiG1 [a] [b] | BiG2 (Int, BiF a b)
   deriving (Show, Eq)
 
-$(deriveBimatchable ''BiG)
-
-instance Eq a => Eq1 (BiG a) where
-  liftEq = liftEq2Default (==)
-
-instance Eq2 BiG where
-  liftEq2 = liftEq2Default
-
-instance Functor (BiG a) where
-  fmap = bimapRecovered id
-
-instance Bifunctor BiG where
-  bimap = bimapRecovered
+deriveInstances [d|
+  deriving instance Bifunctor BiG
+  deriving instance Eq a => Eq1 (BiG a)
+  deriving instance Eq a => Matchable (BiG a)
+  deriving instance Eq2 BiG
+  deriving instance Bimatchable BiG
+  |]
 ```
