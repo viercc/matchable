@@ -38,7 +38,7 @@ import Data.Matchable.TH ( deriveInstances )
 
 -- Test case for using [], tuple, and another Bimatchable instance
 data BiG a b = BiG0 | BiG1 [a] [b] | BiG2 (Int, BiF a b)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Functor)
 
 deriveInstances [d|
   deriving instance Bifunctor BiG
