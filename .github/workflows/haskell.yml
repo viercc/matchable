@@ -1,53 +1,84 @@
-name: Haskell CI
-
+name: Build and Test
 on:
   push:
     branches: [ master ]
-  pull_request:
-    branches: [ master ]
 
 env:
-  cabal-version: '3.10.1.0'
+  project-cabal-file: matchable.cabal
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        ghc: ['9.0.2', '9.2.7', '9.4.4', '9.6.1']
-    name: Build on GHC ${{ matrix.ghc }}
+  generate-matrix:
+    name: "Generate matrix from cabal"
+    outputs: 
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     runs-on: ubuntu-latest
-    
     steps:
-      - uses: actions/checkout@v2
-      
-      - name: Cache
-        uses: actions/cache@v2
+      - name: Extract the tested GHC versions
+        id: set-matrix
+        uses: kleidukos/get-tested@v0.1.7.0
         with:
-          path: |
-            ~/.ghcup
-            ~/.cabal
-            dist-newstyle
-            test-bin
-          key: ${{ runner.os }}-${{ matrix.ghc }}-env
-      
+          cabal-file: ${{ env.project-cabal-file }}
+          ubuntu-version: "latest"
+          version: 0.1.7.0
+  tests:
+    name: ${{ matrix.ghc }} on ${{ matrix.os }}
+    needs: generate-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup Haskell
-        run: |
-          ghcup install ghc ${{ matrix.ghc }} --set
-          ghcup install cabal ${{ env.cabal-version }} --set
+        uses: haskell-actions/setup@v2.7.1
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: '3.10'
       
-      - name: Install dependencies
+      - name: Restore build and dependency cache
+        uses: actions/cache/restore@v4
+        id: restore-build-cache
+        with:
+          key: build-${{ matrix.os }}-${{ matrix.ghc }}-${{ hashFiles(env.project-cabal-file) }}
+          restore-keys: |
+            build-${{ matrix.os }}-${{ matrix.ghc }}-
+          path: |
+            ~/.cabal/config
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+      
+      - name: (debug) ls cache dir
+        run: |
+          echo "---- global cache ----"
+          ls ~/.cabal/store/ghc-${{ matrix.ghc }}/ || echo ":P)"
+          echo "---- local cache ----"
+          ls dist-newstyle/packagedb/ghc-${{ matrix.ghc }}/ || echo ":P)"
+      
+      - name: Build dependencies
         run: |
           cabal update
-          cabal build --only-dependencies --enable-tests --enable-benchmarks
+          cabal v2-build all --enable-tests --enable-benchmarks --only-dependencies
+      
       - name: Build
-        run: cabal v2-build --write-ghc-environment-files=always --enable-tests --enable-benchmarks all
+        run: cabal v2-build all --enable-tests --enable-benchmarks
       
-      - name: Run tests
-        run: cabal v2-test --write-ghc-environment-files=always matchable:matchable-test matchable-th:matchable-th-test
-      
-      - name: Run doctest
+      - name: Run test
+        run: cabal v2-test all
+
+      - name: (debug) ls cache dir
         run: |
-          cabal install --overwrite-policy=always --install-method=copy --installdir=./test-bin doctest
-          chmod u+x ./test-bin/doctest
-          cabal repl --with-ghc=./test-bin/doctest
+          echo "---- global cache ----"
+          ls ~/.cabal/store/ghc-${{ matrix.ghc }}/ || echo ":P)"
+          echo "---- local cache ----"
+          ls dist-newstyle/packagedb/ghc-${{ matrix.ghc }}/ || echo ":P)"
+      
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          key: ${{ steps.restore-build-cache.outputs.cache-primary-key }}
+          path: |
+            ~/.cabal/config
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
