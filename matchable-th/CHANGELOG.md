@@ -1,3 +1,7 @@
+# 0.2.1
+
+- Expand and correct documentations
+
 # 0.2
 
 - Add new derivation syntax taken from "recursion-schemes" package

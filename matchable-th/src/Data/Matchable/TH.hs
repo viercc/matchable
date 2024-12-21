@@ -4,12 +4,15 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveFunctor #-}
 module Data.Matchable.TH (
+  -- * @derive@ functions
   deriveInstances,
+  deriveMatchable, deriveBimatchable,
 
-  deriveMatchable, makeZipMatchWith,
-  deriveBimatchable, makeBizipMatchWith,
-
-  makeLiftEq, makeLiftEq2
+  -- * @make-@ functions
+  makeZipMatchWith,
+  makeBizipMatchWith,
+  makeLiftEq,
+  makeLiftEq2,
 ) where
 
 import           Data.Bifunctor (Bifunctor (..))
@@ -45,9 +48,23 @@ deriveInstanceWith deriver context ty =
     _ -> do reportError ("Instance declaration must be of shape Cls (TyCon ty1 ty2 ...), but it's" ++ show ty)
             pure []
 
--- | This function transforms multiple instance declarations written in @StandaloneDeriving@
---   format to instances derived by TemplateHaskell.
+-- | Derive multiple instances of 'Matchable', 'Bimatchable', or their superclasses,
+--   each written in @StandaloneDeriving@ syntax.
 --
+--   Passing declarations other than standalone deriving instances is an error.
+--   Also, passing any instances other than 'Matchable', 'Bimatchable' or their superclasses is an error.
+--   Explicitly, it accepts standalone deriving declarations of the following types:
+--
+--   - 'Eq1'
+--   - 'Eq2'
+--   - 'Bifunctor'
+--   - 'Matchable'
+--   - 'Bimatchable'
+--   
+--   Passing an 'Eq' or 'Functor' instance declarations does not cause a compilation error
+--   and generates the same standalone deriving declaration passed in, but also causes
+--   a /warning/ telling you that you can use stock deriving for them.
+--   
 --   ==== Example
 --   
 --   @
@@ -93,11 +110,11 @@ deriveInstance dec = case dec of
 bifunctorDeriver, eq1Deriver, matchableDeriver, eq2Deriver, bimatchableDeriver :: Deriver
 bifunctorDeriver = Deriver ''Bifunctor [ ('bimap, makeBimap) ]
 eq1Deriver = Deriver ''Eq1 [ ('liftEq, makeLiftEq) ]
-
 eq2Deriver = Deriver ''Eq2 [ ('liftEq2, makeLiftEq2 ) ]
 matchableDeriver = Deriver ''Matchable [ ('zipMatchWith, makeZipMatchWith) ]
 bimatchableDeriver = Deriver ''Bimatchable [ ('bizipMatchWith, makeBizipMatchWith) ]
 
+-- | Generates an expression which behaves like 'liftEq' for the given data type.
 makeLiftEq :: Name -> Q Exp
 makeLiftEq name = do
   DatatypeInfo { datatypeVars = dtVarsNames , datatypeCons = cons }
@@ -143,6 +160,7 @@ dEq1Field tyA fName = go
         pure $ combineMatchers tupP andBoolExprs matchers
       _ -> unexpectedType ty "Eq1"
 
+-- | Generates an expression which behaves like 'liftEq2' for the given data type.
 makeLiftEq2 :: Name -> Q Exp
 makeLiftEq2 name = do
   DatatypeInfo { datatypeVars = dtVarsNames , datatypeCons = cons }
@@ -193,14 +211,20 @@ dEq2Field tyA fName tyB gName = go
 
 -- | Build an instance of 'Matchable' for a data type.
 --
--- /e.g./
+-- Note that 'deriveMatchable' generates the 'Matchable' instance only. Because 'Matchable'
+-- requires 'Functor' and 'Eq1' (and 'Eq' transitively) as its superclasses, to actually use the generated instance,
+-- it's necessary to provide them too.
+--
+-- Use 'deriveInstances' to generate both @Matchable@ and @Eq1@ instances at once.
+--
+-- ==== Example
 --
 -- @
 -- data Exp a = Plus a a | Times a a
 -- 'deriveMatchable' ''Exp
 -- @
 --
--- will create
+-- will generate the following instance.
 --
 -- @
 -- instance Matchable Exp where
@@ -217,6 +241,7 @@ deriveMatchable name = do
 
   pure [dec]
 
+-- | Generates an expression which behaves like 'zipMatchWith' for the given data type.
 makeZipMatchWith :: Name -> ExpQ
 makeZipMatchWith name = do
   (_, clauses) <- makeZipMatchWith' name
@@ -282,17 +307,23 @@ dMatchField tyA fName = go
 
 -- | Build an instance of 'Bimatchable' for a data type.
 --
--- /e.g./
+-- Note that 'deriveBimatchable' generates the 'Bimatchable' instance only. Because 'Bimatchable'
+-- requires 'Bifunctor' and 'Eq2' (and 'Functor', 'Eq', 'Eq1' transitively) as its superclasses,
+-- to actually use the generated instance, it's necessary to provide them too.
 --
+-- Use 'deriveInstances' to generate all of these instances at once.
+--
+-- ==== Example
+-- 
 -- @
 -- data Sum a b = InL a | InR b
--- 'deriveMatchable' ''Sum
+-- 'deriveBimatchable' ''Sum
 -- @
 --
 -- will create
 --
 -- @
--- instance Matchable Sum where
+-- instance Bimatchable Sum where
 --   bizipMatchWith f _ (InL l1) (InL r1) = pure InL <$> f l1 r1
 --   bizipMatchWith _ g (InR l1) (InR r1) = pure InR <$> g l1 r1
 -- @
@@ -305,6 +336,7 @@ deriveBimatchable name = do
 
   pure [dec]
 
+-- | Generates an expression which behaves like 'bizipMatchWith' for the given data type.
 makeBizipMatchWith :: Name -> ExpQ
 makeBizipMatchWith name = do
   (_, clauses) <- makeBizipMatchWith' name
