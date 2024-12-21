@@ -39,6 +39,6 @@ test-suite matchable-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             example.hs
-  build-depends:       base, containers, matchable, hspec
+  build-depends:       base, containers, matchable, generically, hspec
   default-language:    Haskell2010
 

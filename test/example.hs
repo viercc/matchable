@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 module Main(main) where
 
 import           Data.Bifunctor
@@ -10,6 +11,7 @@ import           Data.Matchable
 import qualified Data.Map             as Map
 
 import           GHC.Generics         (Generic1)
+import           GHC.Generics.Generically (Generically1(..))
 
 import           Test.Hspec
 
@@ -115,13 +117,8 @@ map2 = Map.fromList [pair2, pair4]
 map3 = Map.fromList [pair1]
 
 data MyTree k a = Empty | Node k a (MyTree k a) (MyTree k a)
-  deriving (Show, Eq, Functor, Generic1)
-
-instance Eq k => Eq1 (MyTree k) where
-  liftEq = liftEqDefault
-
-instance Eq k => Matchable (MyTree k) where
-  zipMatchWith = genericZipMatchWith
+  deriving stock (Show, Read, Eq, Ord, Functor, Generic1)
+  deriving (Eq1, Matchable) via (Generically1 (MyTree k))
 
 myTree1 :: MyTree Int String
 myTree1 = Node 0 "foo" Empty (Node 1 "bar" Empty Empty)
