@@ -1,5 +1,5 @@
 name:                matchable
-version:             0.1.2.1
+version:             0.2
 synopsis:            A type class for Matchable Functors.
 description:         This package defines a type class @Matchable@, providing
                      @zipMatch@ operation for zipping two values of any container-like
