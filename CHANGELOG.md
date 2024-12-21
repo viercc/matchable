@@ -1,3 +1,7 @@
+# 0.2
+
+- Supports `deriving via (Generically1 f)`
+
 # 0.1.2.1
 
 - No changes to the library itself. The package description (.cabal file)

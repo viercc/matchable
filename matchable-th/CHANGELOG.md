@@ -1,3 +1,8 @@
+# 0.2
+
+- Add new derivation syntax taken from "recursion-schemes" package
+  (see [Data.Functor.Foldable.TH](https://hackage.haskell.org/package/recursion-schemes-5.2.2.2/docs/Data-Functor-Foldable-TH.html))
+
 # 0.1.2.1
 
 - Require cabal-version: 2.0
