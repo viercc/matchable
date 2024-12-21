@@ -19,7 +19,6 @@ module Data.Matchable(
 import           Control.Applicative
 
 import Data.Functor.Classes ( Eq1 )
-import Data.Functor.Classes.Orphans ()
 
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Foldable

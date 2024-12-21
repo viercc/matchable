@@ -27,7 +27,7 @@ library
   build-depends:        base               >= 4.10       && <5,
                         matchable          >= 0.1.2,
                         bifunctors         >= 5.1,
-                        template-haskell   >= 2.4 && < 2.23,
+                        template-haskell   >= 2.4 && < 2.24,
                         th-abstraction     >= 0.4.0.0
   ghc-options:          -Wall
   default-language:     Haskell2010
