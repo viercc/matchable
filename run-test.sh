@@ -2,7 +2,7 @@
 
 set -ue
 
-compiler_versions="9.0 9.2 9.4 9.6"
+compiler_versions="9.4 9.6 9.8 9.10 9.12"
 
 for v in $compiler_versions; do
     ghc_exact_ver=$(ghcup run --ghc $v -- ghc --numeric-version)
